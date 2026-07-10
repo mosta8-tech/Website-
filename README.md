@@ -4,8 +4,25 @@ Eine Website zum Tracken von An- und Verkauf von Kleidung (z. B. Vinted, Flohmar
 
 ## Nutzung
 
-Einfach die Datei `index.html` im Browser öffnen — es wird kein Server und keine Installation benötigt.
-Alle Daten werden lokal im Browser gespeichert (localStorage) und bleiben beim Neuladen erhalten.
+Die Website läuft unter: **https://mosta8-tech.github.io/Website-/**
+(wird bei jedem Push automatisch über GitHub Pages veröffentlicht)
+
+Alternativ kann die Datei `index.html` auch direkt im Browser geöffnet werden.
+Alle Daten werden lokal im Browser gespeichert (localStorage) und bleiben beim Schließen und Neuladen erhalten.
+
+## Als App auf dem iPhone installieren
+
+1. Die Website in **Safari** öffnen: https://mosta8-tech.github.io/Website-/
+2. Unten auf das **Teilen-Symbol** (Viereck mit Pfeil nach oben) tippen
+3. **„Zum Home-Bildschirm“** auswählen und mit **„Hinzufügen“** bestätigen
+
+Die App erscheint dann mit eigenem Icon auf dem Home-Bildschirm, öffnet sich im
+Vollbild ohne Browserleiste und funktioniert dank Service Worker auch offline.
+Die Daten bleiben auf dem Gerät gespeichert — auch wenn die App geschlossen wird.
+
+**Tipp:** Regelmäßig über den **Export**-Button eine Sicherung der Daten als
+JSON-Datei speichern. Die Daten liegen nur auf dem jeweiligen Gerät; mit
+Export/Import lassen sie sich sichern oder auf ein anderes Gerät übertragen.
 
 ## Funktionen
 

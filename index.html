@@ -2,8 +2,17 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Klamotten-Tracker – Verkäufe & Gewinn</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<meta name="theme-color" content="#f9f9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d0d0d" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Klamotten">
 <style>
   :root {
     --surface-1: #fcfcfb;
@@ -57,11 +66,18 @@
     background: var(--page);
     color: var(--text-primary);
     line-height: 1.45;
+    padding-top: env(safe-area-inset-top);
   }
   button { font: inherit; cursor: pointer; }
   input, select { font: inherit; color: var(--text-primary); }
 
-  .wrap { max-width: 1060px; margin: 0 auto; padding: 0 20px 64px; }
+  .wrap {
+    max-width: 1060px; margin: 0 auto;
+    padding: 0
+      max(20px, env(safe-area-inset-right))
+      calc(64px + env(safe-area-inset-bottom))
+      max(20px, env(safe-area-inset-left));
+  }
 
   header.app {
     display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
@@ -1087,6 +1103,17 @@ $("#importFile").addEventListener("change", e => {
   };
   reader.readAsText(file);
 });
+
+/* ============================== PWA / Offline ============================== */
+
+// Service Worker nur über http(s) registrieren (nicht bei file://)
+if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+// Browser bitten, den Speicher dauerhaft zu behalten (verhindert automatisches Aufräumen)
+if (navigator.storage && navigator.storage.persist) {
+  navigator.storage.persist().catch(() => {});
+}
 
 /* ============================== Start ============================== */
 
