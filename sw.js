@@ -1,5 +1,5 @@
 /* Service Worker: macht die App offline nutzbar. */
-const CACHE = "klamotten-tracker-v1";
+const CACHE = "klamotten-tracker-v2";
 const ASSETS = [
   "./",
   "./index.html",

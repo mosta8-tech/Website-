@@ -33,13 +33,16 @@ Export/Import lassen sie sich sichern oder auf ein anderes Gerät übertragen.
 - **Versandkosten pro Kleidungsstück** werden automatisch anteilig nach Gewicht berechnet:
   `Versandanteil = Gewicht des Teils ÷ Gesamtgewicht × Versandkosten`
   (ohne eingetragenes Gesamtgewicht wird die Summe der Teilgewichte verwendet)
-- Verkäufe erfassen mit Verkaufspreis und Verkaufsdatum, jederzeit änderbar oder zurücksetzbar
+- **Paketstatus** pro Bestellung (🚚 Unterwegs / 📦 Angekommen), direkt auf der Karte umschaltbar
+- Verkäufe erfassen mit Verkaufspreis, Verkaufsdatum, **Plattform (Vinted/eBay)** und
+  **Account (1–3)**, jederzeit änderbar oder zurücksetzbar
 - Gewinn pro Teil und pro Bestellung: `Verkaufspreis − Kaufpreis − Versandanteil`
 
 ### Statistik
 - Gewinn **heute**, **diese Woche** (Mo–So), **diesen Monat** und **gesamt** — automatisch berechnet
-- Lagerwert der noch nicht verkauften Teile
+- Lagerwert der noch nicht verkauften Teile und Anzahl der Pakete unterwegs
 - Säulendiagramm: **Gewinn der letzten 6 Monate** (mit Tooltip je Monat)
+- **Gewinn nach Plattform & Account** (Vinted/eBay, Account 1–3) als Balkendiagramm und Tabelle
 - Monatstabelle mit verkauften Teilen, Umsatz, Kosten und Gewinn
 
 ### Datensicherung

@@ -27,6 +27,9 @@
     --accent-soft: rgba(42,120,214,0.10);
     --pos: #2a78d6;      /* Gewinn-Balken (positiv) */
     --neg: #e34948;      /* Gewinn-Balken (negativ) */
+    --plat-vinted: #2a78d6;
+    --plat-ebay: #1baf7a;
+    --plat-none: #898781;
     --good-text: #006300;
     --bad-text: #b32d2d;
     --badge-sold-bg: rgba(12,163,12,0.12);
@@ -49,6 +52,9 @@
       --accent-soft: rgba(57,135,229,0.16);
       --pos: #3987e5;
       --neg: #e66767;
+      --plat-vinted: #3987e5;
+      --plat-ebay: #199e70;
+      --plat-none: #898781;
       --good-text: #0ca30c;
       --bad-text: #e66767;
       --badge-sold-bg: rgba(12,163,12,0.18);
@@ -154,6 +160,8 @@
   .badge { display: inline-block; font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
   .badge.sold { background: var(--badge-sold-bg); color: var(--badge-sold-tx); }
   .badge.open { background: var(--badge-open-bg); color: var(--badge-open-tx); }
+  button.badge { border: 0; font: inherit; font-size: 11.5px; font-weight: 600; }
+  button.badge:hover { filter: brightness(0.93); }
   .profit-pos { color: var(--good-text); font-weight: 600; }
   .profit-neg { color: var(--bad-text); font-weight: 600; }
 
@@ -187,6 +195,9 @@
   .tooltip .t-name { color: var(--text-secondary); flex: 1; }
   .tooltip .t-val { font-weight: 650; font-variant-numeric: tabular-nums; }
 
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12.5px; color: var(--text-secondary); }
+  .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
   table.stats { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   table.stats th {
     text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
@@ -213,6 +224,11 @@
     background: var(--page);
   }
   .field input:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .field select {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--baseline); border-radius: 8px;
+    background: var(--page); color: var(--text-primary);
+  }
+  .field select:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
   .field .hint { font-size: 11.5px; color: var(--text-muted); margin-top: 3px; }
 
   .items-edit h3 { font-size: 13px; font-weight: 650; color: var(--text-secondary); margin-bottom: 8px; }
@@ -275,6 +291,19 @@
     </div>
 
     <div class="card">
+      <h2>Gewinn nach Plattform &amp; Account</h2>
+      <div class="sub">Realisierter Gewinn je Verkaufskanal</div>
+      <div class="legend" id="platLegend"></div>
+      <div class="chart-box" id="platBox">
+        <svg id="platSvg" role="img" aria-label="Balkendiagramm: Gewinn je Plattform und Account"></svg>
+        <div class="tooltip" id="platTip"></div>
+      </div>
+      <div class="tbl-scroll" style="padding:0">
+        <table class="stats" id="platTable"></table>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Monatsübersicht</h2>
       <div class="sub">Alle Werte beziehen sich auf im jeweiligen Monat verkaufte Teile</div>
       <div class="tbl-scroll" style="padding:0">
@@ -308,6 +337,13 @@
       <div class="field">
         <label for="fShip">Versandkosten (€)</label>
         <input id="fShip" type="text" inputmode="decimal" placeholder="z. B. 5,95">
+      </div>
+      <div class="field">
+        <label for="fStatus">Paketstatus</label>
+        <select id="fStatus">
+          <option value="unterwegs">🚚 Unterwegs</option>
+          <option value="angekommen">📦 Angekommen</option>
+        </select>
       </div>
     </div>
 
@@ -343,6 +379,21 @@
       <div class="field">
         <label for="sDate">Verkaufsdatum</label>
         <input id="sDate" type="date">
+      </div>
+      <div class="field">
+        <label for="sPlatform">Verkauft über</label>
+        <select id="sPlatform">
+          <option value="vinted">Vinted</option>
+          <option value="ebay">eBay</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="sAccount">Account</label>
+        <select id="sAccount">
+          <option value="1">Account 1</option>
+          <option value="2">Account 2</option>
+          <option value="3">Account 3</option>
+        </select>
       </div>
     </div>
     <div class="modal-foot">
@@ -445,18 +496,34 @@ function orderTotals(order) {
   return { buy, revenue, profit, sold, total: order.items.length, inventoryCost };
 }
 
-/** Alle verkauften Teile flach: {date, revenue, cost, profit}. */
+/** Alle verkauften Teile flach: {date, revenue, cost, profit, platform, account}. */
 function soldRecords() {
   const recs = [];
   for (const o of state.orders) {
     for (const it of o.items) {
       const p = itemProfit(o, it);
       if (p === null) continue;
-      recs.push({ date: it.sellDate || o.date || todayISO(), revenue: it.sellPrice, cost: itemCost(o, it), profit: p });
+      recs.push({
+        date: it.sellDate || o.date || todayISO(),
+        revenue: it.sellPrice, cost: itemCost(o, it), profit: p,
+        platform: it.platform || null, account: it.account || null,
+      });
     }
   }
   return recs;
 }
+
+const PLATFORM_NAMES = { vinted: "Vinted", ebay: "eBay" };
+const platformName = p => PLATFORM_NAMES[p] || "Ohne Angabe";
+const platformColor = p => p === "vinted" ? "var(--plat-vinted)" : p === "ebay" ? "var(--plat-ebay)" : "var(--plat-none)";
+
+/** Kanal-Beschriftung eines verkauften Teils, z. B. "Vinted · A2". */
+function channelLabel(it) {
+  if (!it.platform) return "–";
+  return platformName(it.platform) + (it.account ? " · A" + it.account : "");
+}
+
+const orderStatus = o => o.status === "unterwegs" ? "unterwegs" : "angekommen";
 
 function startOfISOWeek(d) {
   const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -548,6 +615,18 @@ function orderCard(o) {
   title.textContent = o.name || "Ohne Namen";
   const dm = document.createElement("span"); dm.className = "muted"; dm.textContent = dateStr(o.date);
   title.appendChild(dm);
+
+  const st = orderStatus(o);
+  const stBtn = document.createElement("button");
+  stBtn.className = "badge " + (st === "angekommen" ? "sold" : "open");
+  stBtn.textContent = st === "angekommen" ? "📦 Angekommen" : "🚚 Unterwegs";
+  stBtn.title = "Paketstatus umschalten";
+  stBtn.addEventListener("click", e => {
+    e.stopPropagation();
+    o.status = st === "angekommen" ? "unterwegs" : "angekommen";
+    save(); renderOrders();
+  });
+
   const sp = document.createElement("div"); sp.className = "spacer";
 
   const kpis = document.createElement("div");
@@ -558,7 +637,7 @@ function orderCard(o) {
     kpi("Umsatz", eur(t.revenue)),
     kpi("Gewinn", eur(t.profit), t.profit > 0 ? "profit-pos" : (t.profit < 0 ? "profit-neg" : ""))
   );
-  head.append(chev, title, sp, kpis);
+  head.append(chev, title, stBtn, sp, kpis);
   head.addEventListener("click", () => {
     card.classList.toggle("open");
     card.classList.contains("open") ? openOrders.add(o.id) : openOrders.delete(o.id);
@@ -615,7 +694,7 @@ function itemsTable(o) {
   const hr = document.createElement("tr");
   const heads = [
     ["Kleidungsstück", ""], ["Gewicht", "num"], ["Kaufpreis", "num"], ["Versandanteil", "num"],
-    ["Kosten", "num"], ["Verkaufspreis", "num"], ["Gewinn", "num"], ["Status", ""], ["", ""]
+    ["Kosten", "num"], ["Verkaufspreis", "num"], ["Gewinn", "num"], ["Verkauft über", ""], ["Status", ""], ["", ""]
   ];
   for (const [h, cls] of heads) {
     const th = document.createElement("th");
@@ -653,6 +732,10 @@ function itemsTable(o) {
     tdP.className = "num " + (sold ? (p >= 0 ? "profit-pos" : "profit-neg") : "");
     tdP.textContent = sold ? eur(p) : "–";
     tr.appendChild(tdP);
+
+    const tdC = document.createElement("td");
+    tdC.textContent = sold ? channelLabel(it) : "–";
+    tr.appendChild(tdC);
 
     const tdS = document.createElement("td");
     const badge = document.createElement("span");
@@ -695,6 +778,7 @@ function openOrderDialog(orderId) {
   $("#fDate").value = o ? (o.date || todayISO()) : todayISO();
   $("#fWeight").value = o && o.totalWeight ? numToInput(o.totalWeight) : "";
   $("#fShip").value = o && o.shippingCost ? numToInput(o.shippingCost) : "";
+  $("#fStatus").value = o ? orderStatus(o) : "unterwegs";
   $("#itemRows").textContent = "";
   if (o && o.items.length) {
     for (const it of o.items) addItemRow(it);
@@ -763,6 +847,8 @@ function saveOrderFromDialog() {
       sellPrice,
       // Verkaufsdatum behalten, wenn es schon eins gab; sonst heute, sobald ein Preis eingetragen wird
       sellDate: sellPrice === null ? null : (prev && prev.sellDate ? prev.sellDate : todayISO()),
+      platform: sellPrice === null ? null : (prev ? prev.platform || null : null),
+      account: sellPrice === null ? null : (prev ? prev.account || null : null),
     });
   });
 
@@ -774,6 +860,7 @@ function saveOrderFromDialog() {
     date: $("#fDate").value || todayISO(),
     totalWeight: parseNum($("#fWeight").value),
     shippingCost: parseNum($("#fShip").value),
+    status: $("#fStatus").value,
     items,
   };
 
@@ -798,7 +885,7 @@ $("#btnCancelSell").addEventListener("click", () => sellDlg.close());
 $("#btnSaveSell").addEventListener("click", saveSell);
 $("#btnUnsell").addEventListener("click", () => {
   const it = findItem(sellTarget);
-  if (it) { it.sellPrice = null; it.sellDate = null; save(); }
+  if (it) { it.sellPrice = null; it.sellDate = null; it.platform = null; it.account = null; save(); }
   sellDlg.close();
   renderOrders();
 });
@@ -816,6 +903,8 @@ function openSellDialog(orderId, itemId) {
   $("#sellDialogTitle").textContent = (sold ? "Verkauf ändern: " : "Verkauf erfassen: ") + it.name;
   $("#sPrice").value = sold ? numToInput(it.sellPrice) : "";
   $("#sDate").value = it.sellDate || todayISO();
+  $("#sPlatform").value = it.platform || "vinted";
+  $("#sAccount").value = it.account ? String(it.account) : "1";
   $("#btnUnsell").hidden = !sold;
   sellDlg.showModal();
   $("#sPrice").focus();
@@ -828,6 +917,8 @@ function saveSell() {
   if (raw === "") { $("#sPrice").focus(); return; }
   it.sellPrice = parseNum(raw);
   it.sellDate = $("#sDate").value || todayISO();
+  it.platform = $("#sPlatform").value;
+  it.account = parseInt($("#sAccount").value, 10);
   save();
   sellDlg.close();
   renderOrders();
@@ -851,38 +942,41 @@ function renderStats() {
   const totalProfit = recs.reduce((a, r) => a + r.profit, 0);
   const totalRevenue = recs.reduce((a, r) => a + r.revenue, 0);
 
-  let inventoryCost = 0, inventoryCount = 0;
+  let inventoryCost = 0, inventoryCount = 0, transitOrders = 0;
   for (const o of state.orders) {
     const t = orderTotals(o);
     inventoryCost += t.inventoryCost;
     inventoryCount += t.total - t.sold;
+    if (orderStatus(o) === "unterwegs") transitOrders++;
   }
 
   const tiles = [
-    ["Gewinn heute", dDay.profit, plural(dDay.count)],
-    ["Gewinn diese Woche", dWeek.profit, plural(dWeek.count)],
-    ["Gewinn diesen Monat", dMonth.profit, plural(dMonth.count)],
-    ["Gesamtgewinn", totalProfit, `${plural(recs.length)} · Umsatz ${eur(totalRevenue)}`],
-    ["Lagerwert (Einkauf)", inventoryCost, `${inventoryCount} ${inventoryCount === 1 ? "Teil" : "Teile"} im Bestand`],
+    { label: "Gewinn heute", text: eur(dDay.profit), sub: plural(dDay.count), tone: dDay.profit },
+    { label: "Gewinn diese Woche", text: eur(dWeek.profit), sub: plural(dWeek.count), tone: dWeek.profit },
+    { label: "Gewinn diesen Monat", text: eur(dMonth.profit), sub: plural(dMonth.count), tone: dMonth.profit },
+    { label: "Gesamtgewinn", text: eur(totalProfit), sub: `${plural(recs.length)} · Umsatz ${eur(totalRevenue)}`, tone: totalProfit },
+    { label: "Lagerwert (Einkauf)", text: eur(inventoryCost), sub: `${inventoryCount} ${inventoryCount === 1 ? "Teil" : "Teile"} im Bestand`, tone: null },
+    { label: "Pakete unterwegs", text: String(transitOrders), sub: `von ${state.orders.length} ${state.orders.length === 1 ? "Bestellung" : "Bestellungen"}`, tone: null },
   ];
   const box = $("#statTiles");
   box.textContent = "";
-  for (const [label, value, sub] of tiles) {
-    const t = document.createElement("div");
-    t.className = "tile";
-    const l = document.createElement("div"); l.className = "label"; l.textContent = label;
+  for (const t of tiles) {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const l = document.createElement("div"); l.className = "label"; l.textContent = t.label;
     const v = document.createElement("div"); v.className = "value";
-    v.textContent = eur(value);
-    if (label !== "Lagerwert (Einkauf)") {
-      if (value > 0) v.style.color = "var(--good-text)";
-      else if (value < 0) v.style.color = "var(--bad-text)";
+    v.textContent = t.text;
+    if (t.tone !== null) {
+      if (t.tone > 0) v.style.color = "var(--good-text)";
+      else if (t.tone < 0) v.style.color = "var(--bad-text)";
     }
-    const s = document.createElement("div"); s.className = "sub"; s.textContent = sub;
-    t.append(l, v, s);
-    box.appendChild(t);
+    const s = document.createElement("div"); s.className = "sub"; s.textContent = t.sub;
+    tile.append(l, v, s);
+    box.appendChild(tile);
   }
 
   renderMonthChart(recs, today);
+  renderPlatformStats(recs);
   renderMonthTable(recs, today);
 }
 
@@ -1029,6 +1123,192 @@ function showTip(tip, box, svg, svgX, svgY, m, color) {
   if (left + tip.offsetWidth > bw - 4) left = svgX * scaleX - tip.offsetWidth - 14;
   tip.style.left = Math.max(4, left) + "px";
   tip.style.top = Math.max(4, svgY * scaleY - 12) + "px";
+}
+
+/* ---------- Gewinn nach Plattform & Account ---------- */
+
+/** Verkäufe nach Kanal (Plattform + Account) gruppieren, feste Reihenfolge. */
+function channelGroups(recs) {
+  const map = new Map();
+  for (const r of recs) {
+    const key = r.platform ? r.platform + "|" + (r.account || 0) : "none";
+    if (!map.has(key)) {
+      map.set(key, { platform: r.platform, account: r.platform ? r.account : null, profit: 0, revenue: 0, cost: 0, count: 0 });
+    }
+    const g = map.get(key);
+    g.profit += r.profit; g.revenue += r.revenue; g.cost += r.cost; g.count++;
+  }
+  const rank = g => (g.platform === "vinted" ? 0 : g.platform === "ebay" ? 10 : 20) + (g.account || 0);
+  return [...map.values()].sort((a, b) => rank(a) - rank(b));
+}
+
+const channelName = g => g.platform
+  ? platformName(g.platform) + (g.account ? " · Account " + g.account : "")
+  : "Ohne Angabe";
+
+function renderPlatformStats(recs) {
+  const groups = channelGroups(recs);
+  const svg = $("#platSvg");
+  const legend = $("#platLegend");
+  const table = $("#platTable");
+  svg.textContent = ""; legend.textContent = ""; table.textContent = "";
+
+  if (!groups.length) {
+    svg.removeAttribute("viewBox");
+    const p = document.createElement("div");
+    p.className = "sub";
+    p.textContent = "Noch keine Verkäufe erfasst.";
+    legend.appendChild(p);
+    return;
+  }
+
+  // Legende (nur bei mehr als einer Plattform nötig)
+  const platforms = [...new Set(groups.map(g => g.platform))];
+  if (platforms.length > 1) {
+    for (const p of platforms) {
+      const e = document.createElement("span");
+      const sw = document.createElement("span"); sw.className = "sw"; sw.style.background = platformColor(p);
+      e.append(sw, document.createTextNode(platformName(p)));
+      legend.appendChild(e);
+    }
+  }
+
+  // horizontales Balkendiagramm
+  const W = 920, rowH = 44, padL = 170, padR = 90, padT = 6, padB = 10;
+  const H = padT + rowH * groups.length + padB;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const vMax = Math.max(0, ...groups.map(g => g.profit));
+  const vMin = Math.min(0, ...groups.map(g => g.profit));
+  const span = (vMax - vMin) || 50;
+  const x = v => padL + (v - vMin) / span * (W - padL - padR);
+
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+
+  // Nulllinie
+  svg.appendChild(el("line", { x1: x(0), x2: x(0), y1: padT, y2: H - padB, stroke: "var(--baseline)", "stroke-width": 1 }));
+
+  const tip = $("#platTip");
+  const box = $("#platBox");
+
+  groups.forEach((g, i) => {
+    const cy = padT + rowH * (i + 0.5);
+    const barH = 20;
+    const x0 = x(0), x1 = x(g.profit);
+    const left = Math.min(x0, x1), wRaw = Math.abs(x1 - x0);
+    const w = g.profit !== 0 ? Math.max(wRaw, 2) : 0;
+    const color = platformColor(g.platform);
+    const r = Math.min(4, w);
+    const yTop = cy - barH / 2;
+
+    if (w > 0) {
+      // 4px gerundetes Datenende, gerade Kante an der Nulllinie
+      const neg = g.profit < 0;
+      const d = neg
+        ? `M ${x0} ${yTop} V ${yTop + barH} H ${left + r} Q ${left} ${yTop + barH} ${left} ${yTop + barH - r} V ${yTop + r} Q ${left} ${yTop} ${left + r} ${yTop} Z`
+        : `M ${x0} ${yTop} V ${yTop + barH} H ${left + w - r} Q ${left + w} ${yTop + barH} ${left + w} ${yTop + barH - r} V ${yTop + r} Q ${left + w} ${yTop} ${left + w - r} ${yTop} Z`;
+      svg.appendChild(el("path", { d, fill: color }));
+    }
+
+    // Kanalname links (Texttoken, nicht Serienfarbe)
+    const name = el("text", { x: padL - 12, y: cy + 4, "text-anchor": "end", "font-size": 12.5, fill: "var(--text-secondary)" });
+    name.textContent = channelName(g);
+    svg.appendChild(name);
+
+    // Wert an der Balkenspitze
+    const isNeg = g.profit < 0;
+    const vx = isNeg ? left - 8 : left + w + 8;
+    const val = el("text", {
+      x: vx, y: cy + 4, "text-anchor": isNeg ? "end" : "start",
+      "font-size": 12, "font-weight": 650, fill: "var(--text-primary)",
+      style: "font-variant-numeric: tabular-nums",
+    });
+    val.textContent = eur(g.profit);
+    svg.appendChild(val);
+
+    // Hover-/Fokusfläche über die ganze Zeile
+    const hit = el("rect", { x: 0, y: padT + rowH * i, width: W, height: rowH, fill: "transparent", tabindex: 0, role: "img" });
+    hit.setAttribute("aria-label", `${channelName(g)}: Gewinn ${eur(g.profit)}, Umsatz ${eur(g.revenue)}, ${g.count} Teile verkauft`);
+    const show = () => showChannelTip(tip, box, svg, W, H, Math.max(x0, x1), cy, g, color);
+    hit.addEventListener("pointerenter", show);
+    hit.addEventListener("pointermove", show);
+    hit.addEventListener("focus", show);
+    hit.addEventListener("pointerleave", () => tip.style.display = "none");
+    hit.addEventListener("blur", () => tip.style.display = "none");
+    svg.appendChild(hit);
+  });
+
+  // Tabellenansicht
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const [h, cls] of [["Kanal", ""], ["Verkaufte Teile", "num"], ["Umsatz", "num"], ["Kosten", "num"], ["Gewinn", "num"]]) {
+    const th = document.createElement("th");
+    if (cls) th.className = cls;
+    th.textContent = h;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const g of groups) {
+    const tr = document.createElement("tr");
+    const cells = [
+      [channelName(g), ""],
+      [String(g.count), "num"],
+      [eur(g.revenue), "num"],
+      [eur(g.cost), "num"],
+    ];
+    for (const [txt, cls] of cells) {
+      const td = document.createElement("td");
+      if (cls) td.className = cls;
+      td.textContent = txt;
+      tr.appendChild(td);
+    }
+    const tdP = document.createElement("td");
+    tdP.className = "num " + (g.profit > 0 ? "profit-pos" : g.profit < 0 ? "profit-neg" : "");
+    tdP.textContent = eur(g.profit);
+    tr.appendChild(tdP);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
+}
+
+function showChannelTip(tip, box, svg, W, H, svgX, svgY, g, color) {
+  tip.textContent = "";
+  const head = document.createElement("div");
+  head.className = "t-head";
+  head.textContent = channelName(g);
+  tip.appendChild(head);
+
+  const row = (name, val, keyColor, strong) => {
+    const r = document.createElement("div"); r.className = "t-row";
+    const k = document.createElement("span"); k.className = "t-key";
+    k.style.background = keyColor || "transparent";
+    const n = document.createElement("span"); n.className = "t-name"; n.textContent = name;
+    const v = document.createElement("span"); v.className = "t-val"; v.textContent = val;
+    if (!strong) v.style.fontWeight = "450";
+    r.append(k, n, v);
+    tip.appendChild(r);
+  };
+  row("Gewinn", eur(g.profit), color, true);
+  row("Umsatz", eur(g.revenue), null, false);
+  row("Kosten", eur(g.cost), null, false);
+  row("Verkaufte Teile", String(g.count), null, false);
+
+  const rect = svg.getBoundingClientRect();
+  const scaleX = rect.width / W, scaleY = rect.height / H;
+  tip.style.display = "block";
+  const bw = box.clientWidth;
+  let leftPx = svgX * scaleX + 14;
+  if (leftPx + tip.offsetWidth > bw - 4) leftPx = svgX * scaleX - tip.offsetWidth - 14;
+  tip.style.left = Math.max(4, leftPx) + "px";
+  tip.style.top = Math.max(4, svgY * scaleY - tip.offsetHeight / 2) + "px";
 }
 
 function renderMonthTable(recs, today) {
