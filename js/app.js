@@ -58,6 +58,13 @@
     });
   });
 
+  // Einnahmearten ohne Kunde; Kundentermine sind alles, was hier nicht steht
+  const KIND_INFO = {
+    minijob: { label: "Minijob", badge: "badge-blue" },
+    cssbuy: { label: "CSSBuy", badge: "badge-purple" },
+    sonstig: { label: "Sonstige Einnahme", badge: "badge-teal" },
+  };
+
   // ===== Kalender =====
   const MINIJOB_LIMIT = 603; // Geringfügigkeitsgrenze pro Monat (Stand 2026)
   let calCursor = new Date();      // angezeigter Monat
@@ -84,7 +91,7 @@
     let monthRevenue = 0;
     let monthHours = 0;
     let monthAppts = 0;
-    let monthMinijob = 0;
+    const monthByKind = { minijob: 0, cssbuy: 0, sonstig: 0 };
 
     for (let i = 0; i < 42; i++) {
       const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
@@ -97,9 +104,9 @@
         monthRevenue += revenue;
         monthHours += dayAppts.reduce((s, a) => s + (a.hours || 0), 0);
         monthAppts += dayAppts.length;
-        monthMinijob += dayAppts
-          .filter((a) => a.kind === "minijob")
-          .reduce((s, a) => s + (a.payment || 0), 0);
+        for (const a of dayAppts) {
+          if (monthByKind[a.kind] !== undefined) monthByKind[a.kind] += a.payment || 0;
+        }
       }
 
       const cell = document.createElement("button");
@@ -127,15 +134,22 @@
       grid.appendChild(cell);
     }
 
-    const overLimit = monthMinijob > MINIJOB_LIMIT;
-    const minijobCard = monthMinijob > 0 ? `
+    const overLimit = monthByKind.minijob > MINIJOB_LIMIT;
+    let kindCards = "";
+    if (monthByKind.minijob > 0) kindCards += `
       <div class="summary-card"><div class="label">davon Minijob</div>
-        <div class="value ${overLimit ? "amber" : ""}">${fmtEUR.format(monthMinijob)}</div>
-        <div class="label">${overLimit ? "über der Grenze von" : "Grenze"}: ${fmtEUR.format(MINIJOB_LIMIT)}</div></div>` : "";
+        <div class="value ${overLimit ? "amber" : ""}">${fmtEUR.format(monthByKind.minijob)}</div>
+        <div class="label">${overLimit ? "über der Grenze von" : "Grenze"}: ${fmtEUR.format(MINIJOB_LIMIT)}</div></div>`;
+    if (monthByKind.cssbuy > 0) kindCards += `
+      <div class="summary-card"><div class="label">davon CSSBuy</div>
+        <div class="value">${fmtEUR.format(monthByKind.cssbuy)}</div></div>`;
+    if (monthByKind.sonstig > 0) kindCards += `
+      <div class="summary-card"><div class="label">davon Sonstiges</div>
+        <div class="value">${fmtEUR.format(monthByKind.sonstig)}</div></div>`;
 
     $("#cal-summary").innerHTML = `
       <div class="summary-card"><div class="label">Umsatz im Monat</div>
-        <div class="value green">${fmtEUR.format(monthRevenue)}</div></div>${minijobCard}
+        <div class="value green">${fmtEUR.format(monthRevenue)}</div></div>${kindCards}
       <div class="summary-card"><div class="label">Arbeitszeit im Monat</div>
         <div class="value">${fmtHours(monthHours)}</div></div>
       <div class="summary-card"><div class="label">Termine im Monat</div>
@@ -178,13 +192,13 @@
 
   // ===== Termin-Karten =====
   function apptCardHTML(a) {
-    const isMinijob = a.kind === "minijob";
-    const c = isMinijob ? null : customerById(a.customerId);
+    const info = KIND_INFO[a.kind];
+    const c = info ? null : customerById(a.customerId);
     const paid = a.payment != null;
     const worked = a.hours != null;
 
     let badges = "";
-    if (isMinijob) badges += `<span class="badge badge-blue">Minijob</span>`;
+    if (info) badges += `<span class="badge ${info.badge}">${info.label}</span>`;
     if (paid) badges += `<span class="badge badge-green">${fmtEUR.format(a.payment)}</span>`;
     if (worked) badges += `<span class="badge badge-gray">${fmtHours(a.hours)}</span>`;
     if (!paid && !worked) badges += `<span class="badge badge-amber">offen</span>`;
@@ -193,15 +207,15 @@
     if (c && c.phone) metaParts.push(`📞 ${escapeHTML(c.phone)}`);
     if (c && c.address) metaParts.push(`📍 ${escapeHTML(c.address)}`);
 
-    const heading = isMinijob
-      ? `${a.time} Uhr – ${escapeHTML(a.title || "Minijob")}`
+    const heading = info
+      ? `${a.time} Uhr – ${escapeHTML(a.title || info.label)}`
       : `${a.time} Uhr – ${escapeHTML(customerName(a))}`;
 
     return `
       <div class="card" data-id="${a.id}">
         <div class="info">
           <div class="title">${heading}</div>
-          ${!isMinijob && a.title ? `<div class="meta">${escapeHTML(a.title)}</div>` : ""}
+          ${!info && a.title ? `<div class="meta">${escapeHTML(a.title)}</div>` : ""}
           ${metaParts.length ? `<div class="meta">${metaParts.join(" · ")}</div>` : ""}
           <div style="margin-top:.3rem">${badges}</div>
         </div>
@@ -276,12 +290,12 @@
       ).join("");
   }
 
-  // Bei Minijob wird kein Kunde benötigt – Auswahl ausblenden und von der Validierung ausnehmen
+  // Nur Kundentermine brauchen einen Kunden – sonst Auswahl ausblenden und von der Validierung ausnehmen
   function updateKindUI() {
-    const isMinijob = formAppt.kind.value === "minijob";
-    $("#appt-customer-label").hidden = isMinijob;
-    formAppt.customerId.required = !isMinijob;
-    formAppt.customerId.disabled = isMinijob;
+    const needsCustomer = formAppt.kind.value === "kunde";
+    $("#appt-customer-label").hidden = !needsCustomer;
+    formAppt.customerId.required = needsCustomer;
+    formAppt.customerId.disabled = !needsCustomer;
   }
 
   function openApptDialog(appt, presetDate) {
@@ -303,13 +317,13 @@
 
   formAppt.addEventListener("submit", () => {
     const f = formAppt;
-    const isMinijob = f.kind.value === "minijob";
-    const customer = isMinijob ? null : customerById(f.customerId.value);
+    const needsCustomer = f.kind.value === "kunde";
+    const customer = needsCustomer ? customerById(f.customerId.value) : null;
     const data = {
       kind: f.kind.value,
       date: f.date.value,
       time: f.time.value,
-      customerId: isMinijob ? null : f.customerId.value,
+      customerId: needsCustomer ? f.customerId.value : null,
       customerNameSnapshot: customer ? customer.name : "",
       title: f.title.value.trim(),
       payment: f.payment.value === "" ? null : Math.max(0, parseFloat(f.payment.value)),
