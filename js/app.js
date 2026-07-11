@@ -1,347 +1,420 @@
-/* Kleidung Tracker – An- & Verkauf von Kleidung tracken.
- * Reine Client-App: Daten liegen im localStorage des Browsers. */
+/* Arbeitskalender – Kunden, Termine und Umsatz, gespeichert im Browser (localStorage). */
+(() => {
+  "use strict";
 
-'use strict';
+  // ===== Speicher =====
+  const KEYS = { customers: "ak_customers", appts: "ak_appointments" };
 
-const STORAGE_KEY = 'kleidung-tracker/orders/v1';
+  const load = (key) => {
+    try { return JSON.parse(localStorage.getItem(key)) || []; }
+    catch { return []; }
+  };
+  const save = (key, data) => localStorage.setItem(key, JSON.stringify(data));
 
-/* ---------- Formatierung ---------- */
-const eur = new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' });
-const fmtMoney = (n) => eur.format(n || 0);
-const fmtWeight = (g) => `${Math.round(g || 0)} g`;
-const fmtDate = (iso) => (iso ? new Date(iso + 'T00:00:00').toLocaleDateString('de-DE') : '—');
+  let customers = load(KEYS.customers);
+  let appts = load(KEYS.appts);
 
-/* ---------- Persistenz ---------- */
-function loadOrders() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-function saveOrders() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
-}
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-let orders = loadOrders();
+  // ===== Helfer =====
+  const $ = (sel) => document.querySelector(sel);
 
-/* ---------- Berechnungen ---------- */
-// Anteilige Versandkosten eines Stücks: Stückgewicht / Gesamtgewicht * Versandkosten gesamt.
-function itemShipping(order, item) {
-  const total = Number(order.totalWeight) || 0;
-  if (total <= 0) return 0;
-  return ((Number(item.weight) || 0) / total) * (Number(order.shipping) || 0);
-}
-// Gewinn = Verkaufspreis − Kaufpreis − anteilige Versandkosten.
-function itemProfit(order, item) {
-  return (Number(item.sell) || 0) - (Number(item.buy) || 0) - itemShipping(order, item);
-}
-const isSold = (item) => !!item.soldDate && (Number(item.sell) || 0) > 0;
+  const fmtEUR = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+  const fmtDateLong = new Intl.DateTimeFormat("de-DE", {
+    weekday: "long", day: "numeric", month: "long", year: "numeric",
+  });
+  const fmtMonth = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" });
 
-/* ---------- Ansichten wechseln ---------- */
-function switchView(name) {
-  document.querySelectorAll('.tab').forEach((t) =>
-    t.classList.toggle('is-active', t.dataset.view === name)
-  );
-  document.querySelectorAll('.view').forEach((v) =>
-    v.classList.toggle('is-active', v.id === `view-${name}`)
-  );
-  if (name === 'stats') renderStats();
-}
+  const toISODate = (d) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-/* ---------- Bestellübersicht rendern ---------- */
-function renderOrders() {
-  const list = document.getElementById('orders-list');
-  const empty = document.getElementById('orders-empty');
-  list.innerHTML = '';
+  const parseISODate = (s) => {
+    const [y, m, d] = s.split("-").map(Number);
+    return new Date(y, m - 1, d);
+  };
 
-  empty.hidden = orders.length > 0;
+  const todayISO = () => toISODate(new Date());
 
-  // Übersichts-Kacheln
-  let invested = 0, revenue = 0, realized = 0, openCount = 0;
-  orders.forEach((o) =>
-    o.items.forEach((it) => {
-      invested += (Number(it.buy) || 0) + itemShipping(o, it);
-      if (isSold(it)) {
-        revenue += Number(it.sell) || 0;
-        realized += itemProfit(o, it);
-      } else {
-        openCount++;
+  const customerById = (id) => customers.find((c) => c.id === id);
+
+  const customerName = (appt) => {
+    const c = customerById(appt.customerId);
+    return c ? c.name : (appt.customerNameSnapshot || "Unbekannter Kunde");
+  };
+
+  const fmtHours = (h) =>
+    `${h.toLocaleString("de-DE", { maximumFractionDigits: 2 })} Std.`;
+
+  const escapeHTML = (s) =>
+    String(s).replace(/[&<>"']/g, (ch) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
+
+  // ===== Ansichten wechseln =====
+  document.querySelectorAll(".tab").forEach((tab) => {
+    tab.addEventListener("click", () => {
+      document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("is-active", t === tab));
+      document.querySelectorAll(".view").forEach((v) =>
+        v.classList.toggle("is-active", v.id === `view-${tab.dataset.view}`));
+    });
+  });
+
+  // ===== Kalender =====
+  let calCursor = new Date();      // angezeigter Monat
+  let selectedDay = null;          // ISO-Datum des ausgewählten Tages
+
+  const apptsOfDay = (iso) =>
+    appts.filter((a) => a.date === iso).sort((a, b) => a.time.localeCompare(b.time));
+
+  const revenueOfDay = (iso) =>
+    apptsOfDay(iso).reduce((sum, a) => sum + (a.payment || 0), 0);
+
+  function renderCalendar() {
+    const year = calCursor.getFullYear();
+    const month = calCursor.getMonth();
+    $("#cal-title").textContent = fmtMonth.format(calCursor);
+
+    const first = new Date(year, month, 1);
+    const startOffset = (first.getDay() + 6) % 7; // Montag = 0
+    const gridStart = new Date(year, month, 1 - startOffset);
+
+    const grid = $("#cal-grid");
+    grid.innerHTML = "";
+
+    let monthRevenue = 0;
+    let monthHours = 0;
+    let monthAppts = 0;
+
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
+      const iso = toISODate(d);
+      const inMonth = d.getMonth() === month;
+      const dayAppts = apptsOfDay(iso);
+      const revenue = dayAppts.reduce((s, a) => s + (a.payment || 0), 0);
+
+      if (inMonth) {
+        monthRevenue += revenue;
+        monthHours += dayAppts.reduce((s, a) => s + (a.hours || 0), 0);
+        monthAppts += dayAppts.length;
       }
-    })
-  );
-  document.getElementById('orders-summary').innerHTML = [
-    card('Bestellungen', String(orders.length)),
-    card('Umsatz (verkauft)', fmtMoney(revenue)),
-    card('Realisierter Gewinn', fmtMoney(realized), realized),
-    card('Noch nicht verkauft', String(openCount)),
-  ].join('');
 
-  // sortiert nach Kaufdatum absteigend
-  const sorted = [...orders].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const cell = document.createElement("button");
+      cell.type = "button";
+      cell.className = "cal-day";
+      if (!inMonth) cell.classList.add("is-other");
+      if (iso === todayISO()) cell.classList.add("is-today");
+      if (iso === selectedDay) cell.classList.add("is-selected");
 
-  for (const order of sorted) {
-    list.appendChild(orderCard(order));
-  }
-}
+      let html = `<span class="day-num">${d.getDate()}</span>`;
+      if (inMonth && revenue > 0) html += `<span class="day-revenue">${fmtEUR.format(revenue)}</span>`;
+      if (inMonth && dayAppts.length > 0)
+        html += `<span class="day-appts">${dayAppts.length} Termin${dayAppts.length > 1 ? "e" : ""}</span>`;
+      cell.innerHTML = html;
 
-function card(label, value, signable) {
-  let cls = '';
-  if (typeof signable === 'number') cls = signable >= 0 ? 'pos' : 'neg';
-  return `<div class="stat-card"><div class="label">${label}</div><div class="value ${cls}">${value}</div></div>`;
-}
-
-function orderCard(order) {
-  const el = document.createElement('div');
-  el.className = 'order-card';
-
-  const rows = order.items
-    .map((it) => {
-      const ship = itemShipping(order, it);
-      const profit = itemProfit(order, it);
-      const sold = isSold(it);
-      const pClass = profit >= 0 ? 'profit-pos' : 'profit-neg';
-      return `<tr>
-        <td>${escapeHtml(it.category) || '—'}</td>
-        <td>${escapeHtml(it.name) || '—'}</td>
-        <td>${fmtWeight(it.weight)}</td>
-        <td>${fmtMoney(it.buy)}</td>
-        <td>${fmtMoney(ship)}</td>
-        <td>${sold ? fmtMoney(it.sell) : '—'}</td>
-        <td class="${sold ? pClass : ''}">${sold ? fmtMoney(profit) : '—'}</td>
-        <td>${sold
-          ? `<span class="badge sold">verkauft ${fmtDate(it.soldDate)}</span>`
-          : '<span class="badge open">offen</span>'}</td>
-      </tr>`;
-    })
-    .join('');
-
-  el.innerHTML = `
-    <div class="order-card-head">
-      <div class="order-meta">
-        <div class="m"><span>Kaufdatum</span><strong>${fmtDate(order.date)}</strong></div>
-        <div class="m"><span>Gesamtgewicht</span><strong>${fmtWeight(order.totalWeight)}</strong></div>
-        <div class="m"><span>Versandkosten</span><strong>${fmtMoney(order.shipping)}</strong></div>
-        ${order.label ? `<div class="m"><span>Bezeichnung</span><strong>${escapeHtml(order.label)}</strong></div>` : ''}
-        <div class="m"><span>Stücke</span><strong>${order.items.length}</strong></div>
-      </div>
-      <div class="order-actions">
-        <button class="icon-btn" data-edit="${order.id}" title="Bearbeiten">✏️</button>
-        <button class="icon-btn" data-del="${order.id}" title="Löschen">🗑</button>
-      </div>
-    </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Art</th><th>Name</th><th>Gewicht</th><th>Kaufpreis</th>
-            <th>Versand (anteilig)</th><th>Verkaufspreis</th><th>Gewinn</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody>${rows || '<tr><td colspan="8">Keine Kleidungsstücke</td></tr>'}</tbody>
-      </table>
-    </div>`;
-  return el;
-}
-
-/* ---------- Statistik rendern ---------- */
-function startOfWeek(d) {
-  const x = new Date(d);
-  const day = (x.getDay() + 6) % 7; // Montag = 0
-  x.setHours(0, 0, 0, 0);
-  x.setDate(x.getDate() - day);
-  return x;
-}
-
-function renderStats() {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const weekStart = startOfWeek(now);
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  let pToday = 0, pWeek = 0, pMonth = 0, pTotal = 0;
-  let soldCount = 0, openCount = 0, revenue = 0;
-
-  const sales = []; // {date: Date, profit}
-  for (const o of orders) {
-    for (const it of o.items) {
-      if (!isSold(it)) { openCount++; continue; }
-      soldCount++;
-      const profit = itemProfit(o, it);
-      revenue += Number(it.sell) || 0;
-      pTotal += profit;
-      const d = new Date(it.soldDate + 'T00:00:00');
-      sales.push({ date: d, profit });
-      if (d >= today) pToday += profit;
-      if (d >= weekStart) pWeek += profit;
-      if (d >= monthStart) pMonth += profit;
+      if (inMonth) {
+        cell.addEventListener("click", () => {
+          selectedDay = iso;
+          renderCalendar();
+          renderDayPanel();
+        });
+      } else {
+        cell.disabled = true;
+      }
+      grid.appendChild(cell);
     }
+
+    $("#cal-summary").innerHTML = `
+      <div class="summary-card"><div class="label">Umsatz im Monat</div>
+        <div class="value green">${fmtEUR.format(monthRevenue)}</div></div>
+      <div class="summary-card"><div class="label">Arbeitszeit im Monat</div>
+        <div class="value">${fmtHours(monthHours)}</div></div>
+      <div class="summary-card"><div class="label">Termine im Monat</div>
+        <div class="value">${monthAppts}</div></div>`;
   }
 
-  document.getElementById('stats-cards').innerHTML = [
-    card('Gewinn heute', fmtMoney(pToday), pToday),
-    card('Diese Woche', fmtMoney(pWeek), pWeek),
-    card('Dieser Monat', fmtMoney(pMonth), pMonth),
-    card('Gesamt', fmtMoney(pTotal), pTotal),
-  ].join('');
+  function renderDayPanel() {
+    const panel = $("#day-panel");
+    if (!selectedDay) { panel.hidden = true; return; }
 
-  const avg = soldCount ? pTotal / soldCount : 0;
-  document.getElementById('stats-extra').innerHTML = [
-    card('Umsatz gesamt', fmtMoney(revenue)),
-    card('Verkaufte Stücke', String(soldCount)),
-    card('Offene Stücke', String(openCount)),
-    card('Ø Gewinn / Stück', fmtMoney(avg), avg),
-  ].join('');
+    panel.hidden = false;
+    const dayAppts = apptsOfDay(selectedDay);
+    const revenue = revenueOfDay(selectedDay);
+    $("#day-panel-title").textContent =
+      `${fmtDateLong.format(parseISODate(selectedDay))}` +
+      (revenue > 0 ? ` – ${fmtEUR.format(revenue)}` : "");
 
-  renderChart(sales, now);
-}
+    const list = $("#day-panel-list");
+    list.innerHTML = dayAppts.length
+      ? dayAppts.map(apptCardHTML).join("")
+      : `<p class="empty-state is-visible">Keine Termine an diesem Tag.</p>`;
+    bindApptCardActions(list);
+  }
 
-function renderChart(sales, now) {
-  // Buckets für die letzten 6 Monate (inkl. aktuellem Monat)
-  const buckets = [];
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    buckets.push({
-      year: d.getFullYear(),
-      month: d.getMonth(),
-      label: d.toLocaleDateString('de-DE', { month: 'short', year: '2-digit' }),
-      profit: 0,
+  $("#cal-prev").addEventListener("click", () => {
+    calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() - 1, 1);
+    renderCalendar();
+  });
+  $("#cal-next").addEventListener("click", () => {
+    calCursor = new Date(calCursor.getFullYear(), calCursor.getMonth() + 1, 1);
+    renderCalendar();
+  });
+  $("#cal-today").addEventListener("click", () => {
+    calCursor = new Date();
+    selectedDay = todayISO();
+    renderCalendar();
+    renderDayPanel();
+  });
+  $("#btn-day-new").addEventListener("click", () => openApptDialog(null, selectedDay));
+
+  // ===== Termin-Karten =====
+  function apptCardHTML(a) {
+    const c = customerById(a.customerId);
+    const paid = a.payment != null;
+    const worked = a.hours != null;
+
+    let badges = "";
+    if (paid) badges += `<span class="badge badge-green">${fmtEUR.format(a.payment)}</span>`;
+    if (worked) badges += `<span class="badge badge-gray">${fmtHours(a.hours)}</span>`;
+    if (!paid && !worked) badges += `<span class="badge badge-amber">offen</span>`;
+
+    const metaParts = [];
+    if (c && c.phone) metaParts.push(`📞 ${escapeHTML(c.phone)}`);
+    if (c && c.address) metaParts.push(`📍 ${escapeHTML(c.address)}`);
+
+    return `
+      <div class="card" data-id="${a.id}">
+        <div class="info">
+          <div class="title">${a.time} Uhr – ${escapeHTML(customerName(a))}</div>
+          ${a.title ? `<div class="meta">${escapeHTML(a.title)}</div>` : ""}
+          ${metaParts.length ? `<div class="meta">${metaParts.join(" · ")}</div>` : ""}
+          <div style="margin-top:.3rem">${badges}</div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm" data-edit>Bearbeiten</button>
+          <button class="btn btn-sm btn-danger" data-delete>Löschen</button>
+        </div>
+      </div>`;
+  }
+
+  function bindApptCardActions(root) {
+    root.querySelectorAll("[data-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.closest(".card").dataset.id;
+        openApptDialog(appts.find((a) => a.id === id));
+      });
+    });
+    root.querySelectorAll("[data-delete]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.closest(".card").dataset.id;
+        if (!confirm("Diesen Termin wirklich löschen?")) return;
+        appts = appts.filter((a) => a.id !== id);
+        save(KEYS.appts, appts);
+        renderAll();
+      });
     });
   }
-  for (const s of sales) {
-    const b = buckets.find((x) => x.year === s.date.getFullYear() && x.month === s.date.getMonth());
-    if (b) b.profit += s.profit;
-  }
 
-  const max = Math.max(1, ...buckets.map((b) => Math.abs(b.profit)));
-  const chart = document.getElementById('stats-chart');
-  chart.innerHTML = buckets
-    .map((b) => {
-      const h = Math.round((Math.abs(b.profit) / max) * 100);
-      return `<div class="chart-col">
-        <div class="chart-val">${b.profit ? fmtMoney(b.profit) : ''}</div>
-        <div class="chart-bar ${b.profit < 0 ? 'neg' : ''}" style="height:${h}%"></div>
-        <div class="chart-label">${b.label}</div>
-      </div>`;
-    })
-    .join('');
-}
+  // ===== Terminliste =====
+  function renderAppts() {
+    const showPast = $("#appt-show-past").checked;
+    const today = todayISO();
 
-/* ---------- Modal / Formular ---------- */
-const modal = document.getElementById('order-modal');
-const form = document.getElementById('order-form');
-const itemsContainer = document.getElementById('items-container');
+    const visible = appts
+      .filter((a) => showPast || a.date >= today)
+      .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
 
-function addItemRow(item = {}) {
-  const tpl = document.getElementById('item-row-template').content.cloneNode(true);
-  const row = tpl.querySelector('.item-row');
-  row.querySelector('.i-category').value = item.category || '';
-  row.querySelector('.i-name').value = item.name || '';
-  row.querySelector('.i-weight').value = item.weight ?? '';
-  row.querySelector('.i-buy').value = item.buy ?? '';
-  row.querySelector('.i-sell').value = item.sell ?? '';
-  row.querySelector('.i-solddate').value = item.soldDate || '';
-  row.querySelector('.item-remove').addEventListener('click', () => row.remove());
-  itemsContainer.appendChild(row);
-}
+    const list = $("#appt-list");
+    list.innerHTML = "";
 
-function openModal(order = null) {
-  form.reset();
-  itemsContainer.innerHTML = '';
-  document.getElementById('order-id').value = order ? order.id : '';
-  document.getElementById('modal-title').textContent = order ? 'Bestellung bearbeiten' : 'Neue Bestellung';
-
-  if (order) {
-    document.getElementById('order-date').value = order.date || '';
-    document.getElementById('order-weight').value = order.totalWeight ?? '';
-    document.getElementById('order-shipping').value = order.shipping ?? '';
-    document.getElementById('order-label').value = order.label || '';
-    order.items.forEach(addItemRow);
-  } else {
-    document.getElementById('order-date').value = new Date().toISOString().slice(0, 10);
-    addItemRow();
-  }
-  modal.hidden = false;
-}
-function closeModal() {
-  modal.hidden = true;
-}
-
-function collectItems() {
-  return [...itemsContainer.querySelectorAll('.item-row')]
-    .map((row) => ({
-      category: row.querySelector('.i-category').value.trim(),
-      name: row.querySelector('.i-name').value.trim(),
-      weight: numOrNull(row.querySelector('.i-weight').value),
-      buy: numOrNull(row.querySelector('.i-buy').value),
-      sell: numOrNull(row.querySelector('.i-sell').value),
-      soldDate: row.querySelector('.i-solddate').value || '',
-    }))
-    // Leere Zeilen (nichts eingetragen) verwerfen
-    .filter((it) => it.category || it.name || it.weight || it.buy || it.sell);
-}
-const numOrNull = (v) => (v === '' || v == null ? null : Number(v));
-
-form.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const id = document.getElementById('order-id').value;
-  const data = {
-    id: id || uid(),
-    date: document.getElementById('order-date').value,
-    totalWeight: Number(document.getElementById('order-weight').value) || 0,
-    shipping: Number(document.getElementById('order-shipping').value) || 0,
-    label: document.getElementById('order-label').value.trim(),
-    items: collectItems(),
-  };
-  if (data.items.length === 0) {
-    alert('Bitte mindestens ein Kleidungsstück eintragen.');
-    return;
-  }
-
-  if (id) {
-    const i = orders.findIndex((o) => o.id === id);
-    if (i !== -1) orders[i] = data;
-  } else {
-    orders.push(data);
-  }
-  saveOrders();
-  renderOrders();
-  closeModal();
-});
-
-/* ---------- Event-Verdrahtung ---------- */
-document.querySelectorAll('.tab').forEach((t) =>
-  t.addEventListener('click', () => switchView(t.dataset.view))
-);
-document.getElementById('btn-new-order').addEventListener('click', () => openModal());
-document.getElementById('btn-add-item').addEventListener('click', () => addItemRow());
-document.getElementById('modal-close').addEventListener('click', closeModal);
-document.getElementById('btn-cancel').addEventListener('click', closeModal);
-modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
-
-document.getElementById('orders-list').addEventListener('click', (e) => {
-  const editId = e.target.closest('[data-edit]')?.dataset.edit;
-  const delId = e.target.closest('[data-del]')?.dataset.del;
-  if (editId) {
-    const order = orders.find((o) => o.id === editId);
-    if (order) openModal(order);
-  } else if (delId) {
-    if (confirm('Diese Bestellung wirklich löschen?')) {
-      orders = orders.filter((o) => o.id !== delId);
-      saveOrders();
-      renderOrders();
+    let lastDate = null;
+    for (const a of visible) {
+      if (a.date !== lastDate) {
+        lastDate = a.date;
+        const revenue = revenueOfDay(a.date);
+        const h = document.createElement("div");
+        h.className = "date-heading";
+        h.textContent = fmtDateLong.format(parseISODate(a.date)) +
+          (revenue > 0 ? ` · ${fmtEUR.format(revenue)}` : "");
+        list.appendChild(h);
+      }
+      list.insertAdjacentHTML("beforeend", apptCardHTML(a));
     }
+    bindApptCardActions(list);
+    $("#appt-empty").classList.toggle("is-visible", visible.length === 0);
   }
-});
 
-/* ---------- Sicherheit: HTML escapen ---------- */
-function escapeHtml(str) {
-  if (!str) return '';
-  return String(str).replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
-  );
-}
+  $("#appt-show-past").addEventListener("change", renderAppts);
 
-/* ---------- Start ---------- */
-renderOrders();
+  // ===== Termin-Dialog =====
+  const dlgAppt = $("#dlg-appt");
+  const formAppt = $("#form-appt");
+  let editingApptId = null;
+
+  function fillCustomerSelect(selectedId) {
+    const sel = $("#appt-customer-select");
+    const sorted = [...customers].sort((a, b) => a.name.localeCompare(b.name, "de"));
+    sel.innerHTML =
+      `<option value="" disabled ${selectedId ? "" : "selected"}>Kunde wählen…</option>` +
+      sorted.map((c) =>
+        `<option value="${c.id}" ${c.id === selectedId ? "selected" : ""}>${escapeHTML(c.name)}</option>`
+      ).join("");
+  }
+
+  function openApptDialog(appt, presetDate) {
+    if (customers.length === 0) {
+      alert("Bitte lege zuerst einen Kunden an (Reiter „Kunden“).");
+      return;
+    }
+    editingApptId = appt ? appt.id : null;
+    $("#dlg-appt-title").textContent = appt ? "Termin bearbeiten" : "Neuer Termin";
+    formAppt.reset();
+    fillCustomerSelect(appt ? appt.customerId : null);
+    formAppt.date.value = appt ? appt.date : (presetDate || todayISO());
+    formAppt.time.value = appt ? appt.time : "09:00";
+    formAppt.title.value = appt ? (appt.title || "") : "";
+    formAppt.payment.value = appt && appt.payment != null ? appt.payment : "";
+    formAppt.hours.value = appt && appt.hours != null ? appt.hours : "";
+    dlgAppt.showModal();
+  }
+
+  formAppt.addEventListener("submit", () => {
+    const f = formAppt;
+    const customer = customerById(f.customerId.value);
+    const data = {
+      date: f.date.value,
+      time: f.time.value,
+      customerId: f.customerId.value,
+      customerNameSnapshot: customer ? customer.name : "",
+      title: f.title.value.trim(),
+      payment: f.payment.value === "" ? null : Math.max(0, parseFloat(f.payment.value)),
+      hours: f.hours.value === "" ? null : Math.max(0, parseFloat(f.hours.value)),
+    };
+
+    if (editingApptId) {
+      const i = appts.findIndex((a) => a.id === editingApptId);
+      appts[i] = { ...appts[i], ...data };
+    } else {
+      appts.push({ id: uid(), ...data });
+    }
+    save(KEYS.appts, appts);
+    renderAll();
+  });
+
+  $("#btn-new-appt").addEventListener("click", () => openApptDialog(null));
+
+  // ===== Kunden =====
+  const dlgCustomer = $("#dlg-customer");
+  const formCustomer = $("#form-customer");
+  let editingCustomerId = null;
+
+  function customerCardHTML(c) {
+    const count = appts.filter((a) => a.customerId === c.id).length;
+    const total = appts
+      .filter((a) => a.customerId === c.id)
+      .reduce((s, a) => s + (a.payment || 0), 0);
+
+    const metaParts = [];
+    if (c.phone) metaParts.push(`📞 <a href="tel:${escapeHTML(c.phone.replace(/\s/g, ""))}">${escapeHTML(c.phone)}</a>`);
+    if (c.address) metaParts.push(`📍 ${escapeHTML(c.address)}`);
+
+    return `
+      <div class="card" data-id="${c.id}">
+        <div class="info">
+          <div class="title">${escapeHTML(c.name)}</div>
+          ${metaParts.length ? `<div class="meta">${metaParts.join("<br>")}</div>` : ""}
+          <div style="margin-top:.3rem">
+            <span class="badge badge-gray">${count} Termin${count === 1 ? "" : "e"}</span>
+            ${total > 0 ? `<span class="badge badge-green">${fmtEUR.format(total)} gesamt</span>` : ""}
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn btn-sm" data-edit>Bearbeiten</button>
+          <button class="btn btn-sm btn-danger" data-delete>Löschen</button>
+        </div>
+      </div>`;
+  }
+
+  function renderCustomers() {
+    const q = $("#customer-search").value.trim().toLowerCase();
+    const visible = customers
+      .filter((c) =>
+        !q ||
+        c.name.toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q) ||
+        (c.address || "").toLowerCase().includes(q))
+      .sort((a, b) => a.name.localeCompare(b.name, "de"));
+
+    const list = $("#customer-list");
+    list.innerHTML = visible.map(customerCardHTML).join("");
+
+    list.querySelectorAll("[data-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.closest(".card").dataset.id;
+        openCustomerDialog(customerById(id));
+      });
+    });
+    list.querySelectorAll("[data-delete]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.closest(".card").dataset.id;
+        const c = customerById(id);
+        const count = appts.filter((a) => a.customerId === id).length;
+        const msg = count > 0
+          ? `„${c.name}“ hat ${count} Termin(e). Kunde trotzdem löschen? Die Termine bleiben erhalten.`
+          : `„${c.name}“ wirklich löschen?`;
+        if (!confirm(msg)) return;
+        customers = customers.filter((x) => x.id !== id);
+        save(KEYS.customers, customers);
+        renderAll();
+      });
+    });
+
+    $("#customer-empty").classList.toggle("is-visible", customers.length === 0);
+  }
+
+  function openCustomerDialog(c) {
+    editingCustomerId = c ? c.id : null;
+    $("#dlg-customer-title").textContent = c ? "Kunde bearbeiten" : "Neuer Kunde";
+    formCustomer.reset();
+    formCustomer.name.value = c ? c.name : "";
+    formCustomer.phone.value = c ? (c.phone || "") : "";
+    formCustomer.address.value = c ? (c.address || "") : "";
+    dlgCustomer.showModal();
+  }
+
+  formCustomer.addEventListener("submit", () => {
+    const f = formCustomer;
+    const data = {
+      name: f.name.value.trim(),
+      phone: f.phone.value.trim(),
+      address: f.address.value.trim(),
+    };
+    if (!data.name) return;
+
+    if (editingCustomerId) {
+      const i = customers.findIndex((c) => c.id === editingCustomerId);
+      customers[i] = { ...customers[i], ...data };
+    } else {
+      customers.push({ id: uid(), ...data });
+    }
+    save(KEYS.customers, customers);
+    renderAll();
+  });
+
+  $("#btn-new-customer").addEventListener("click", () => openCustomerDialog(null));
+  $("#customer-search").addEventListener("input", renderCustomers);
+
+  // Abbrechen-Buttons schließen den jeweiligen Dialog ohne zu speichern
+  document.querySelectorAll("dialog [data-close]").forEach((btn) => {
+    btn.addEventListener("click", () => btn.closest("dialog").close());
+  });
+
+  // ===== Alles rendern =====
+  function renderAll() {
+    renderCalendar();
+    renderDayPanel();
+    renderAppts();
+    renderCustomers();
+  }
+
+  selectedDay = todayISO();
+  renderAll();
+})();
