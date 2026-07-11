@@ -59,6 +59,7 @@
   });
 
   // ===== Kalender =====
+  const MINIJOB_LIMIT = 603; // Geringfügigkeitsgrenze pro Monat (Stand 2026)
   let calCursor = new Date();      // angezeigter Monat
   let selectedDay = null;          // ISO-Datum des ausgewählten Tages
 
@@ -83,6 +84,7 @@
     let monthRevenue = 0;
     let monthHours = 0;
     let monthAppts = 0;
+    let monthMinijob = 0;
 
     for (let i = 0; i < 42; i++) {
       const d = new Date(gridStart.getFullYear(), gridStart.getMonth(), gridStart.getDate() + i);
@@ -95,6 +97,9 @@
         monthRevenue += revenue;
         monthHours += dayAppts.reduce((s, a) => s + (a.hours || 0), 0);
         monthAppts += dayAppts.length;
+        monthMinijob += dayAppts
+          .filter((a) => a.kind === "minijob")
+          .reduce((s, a) => s + (a.payment || 0), 0);
       }
 
       const cell = document.createElement("button");
@@ -122,9 +127,15 @@
       grid.appendChild(cell);
     }
 
+    const overLimit = monthMinijob > MINIJOB_LIMIT;
+    const minijobCard = monthMinijob > 0 ? `
+      <div class="summary-card"><div class="label">davon Minijob</div>
+        <div class="value ${overLimit ? "amber" : ""}">${fmtEUR.format(monthMinijob)}</div>
+        <div class="label">${overLimit ? "über der Grenze von" : "Grenze"}: ${fmtEUR.format(MINIJOB_LIMIT)}</div></div>` : "";
+
     $("#cal-summary").innerHTML = `
       <div class="summary-card"><div class="label">Umsatz im Monat</div>
-        <div class="value green">${fmtEUR.format(monthRevenue)}</div></div>
+        <div class="value green">${fmtEUR.format(monthRevenue)}</div></div>${minijobCard}
       <div class="summary-card"><div class="label">Arbeitszeit im Monat</div>
         <div class="value">${fmtHours(monthHours)}</div></div>
       <div class="summary-card"><div class="label">Termine im Monat</div>
@@ -167,11 +178,13 @@
 
   // ===== Termin-Karten =====
   function apptCardHTML(a) {
-    const c = customerById(a.customerId);
+    const isMinijob = a.kind === "minijob";
+    const c = isMinijob ? null : customerById(a.customerId);
     const paid = a.payment != null;
     const worked = a.hours != null;
 
     let badges = "";
+    if (isMinijob) badges += `<span class="badge badge-blue">Minijob</span>`;
     if (paid) badges += `<span class="badge badge-green">${fmtEUR.format(a.payment)}</span>`;
     if (worked) badges += `<span class="badge badge-gray">${fmtHours(a.hours)}</span>`;
     if (!paid && !worked) badges += `<span class="badge badge-amber">offen</span>`;
@@ -180,11 +193,15 @@
     if (c && c.phone) metaParts.push(`📞 ${escapeHTML(c.phone)}`);
     if (c && c.address) metaParts.push(`📍 ${escapeHTML(c.address)}`);
 
+    const heading = isMinijob
+      ? `${a.time} Uhr – ${escapeHTML(a.title || "Minijob")}`
+      : `${a.time} Uhr – ${escapeHTML(customerName(a))}`;
+
     return `
       <div class="card" data-id="${a.id}">
         <div class="info">
-          <div class="title">${a.time} Uhr – ${escapeHTML(customerName(a))}</div>
-          ${a.title ? `<div class="meta">${escapeHTML(a.title)}</div>` : ""}
+          <div class="title">${heading}</div>
+          ${!isMinijob && a.title ? `<div class="meta">${escapeHTML(a.title)}</div>` : ""}
           ${metaParts.length ? `<div class="meta">${metaParts.join(" · ")}</div>` : ""}
           <div style="margin-top:.3rem">${badges}</div>
         </div>
@@ -259,15 +276,23 @@
       ).join("");
   }
 
+  // Bei Minijob wird kein Kunde benötigt – Auswahl ausblenden und von der Validierung ausnehmen
+  function updateKindUI() {
+    const isMinijob = formAppt.kind.value === "minijob";
+    $("#appt-customer-label").hidden = isMinijob;
+    formAppt.customerId.required = !isMinijob;
+    formAppt.customerId.disabled = isMinijob;
+  }
+
   function openApptDialog(appt, presetDate) {
-    if (customers.length === 0) {
-      alert("Bitte lege zuerst einen Kunden an (Reiter „Kunden“).");
-      return;
-    }
     editingApptId = appt ? appt.id : null;
     $("#dlg-appt-title").textContent = appt ? "Termin bearbeiten" : "Neuer Termin";
     formAppt.reset();
     fillCustomerSelect(appt ? appt.customerId : null);
+    formAppt.kind.value = appt
+      ? (appt.kind || "kunde")
+      : (customers.length === 0 ? "minijob" : "kunde");
+    updateKindUI();
     formAppt.date.value = appt ? appt.date : (presetDate || todayISO());
     formAppt.time.value = appt ? appt.time : "09:00";
     formAppt.title.value = appt ? (appt.title || "") : "";
@@ -278,11 +303,13 @@
 
   formAppt.addEventListener("submit", () => {
     const f = formAppt;
-    const customer = customerById(f.customerId.value);
+    const isMinijob = f.kind.value === "minijob";
+    const customer = isMinijob ? null : customerById(f.customerId.value);
     const data = {
+      kind: f.kind.value,
       date: f.date.value,
       time: f.time.value,
-      customerId: f.customerId.value,
+      customerId: isMinijob ? null : f.customerId.value,
       customerNameSnapshot: customer ? customer.name : "",
       title: f.title.value.trim(),
       payment: f.payment.value === "" ? null : Math.max(0, parseFloat(f.payment.value)),
@@ -300,6 +327,7 @@
   });
 
   $("#btn-new-appt").addEventListener("click", () => openApptDialog(null));
+  formAppt.kind.addEventListener("change", updateKindUI);
 
   // ===== Kunden =====
   const dlgCustomer = $("#dlg-customer");

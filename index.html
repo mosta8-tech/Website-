@@ -105,6 +105,12 @@
   <dialog id="dlg-appt">
     <form method="dialog" class="dlg-form" id="form-appt">
       <h2 id="dlg-appt-title">Neuer Termin</h2>
+      <label>Art der Arbeit *
+        <select name="kind" class="input" id="appt-kind-select" required>
+          <option value="kunde">Kundentermin</option>
+          <option value="minijob">Minijob</option>
+        </select>
+      </label>
       <div class="grid-2">
         <label>Datum *
           <input type="date" name="date" class="input" required />
@@ -113,11 +119,11 @@
           <input type="time" name="time" class="input" required />
         </label>
       </div>
-      <label>Kunde *
+      <label id="appt-customer-label">Kunde *
         <select name="customerId" class="input" id="appt-customer-select" required></select>
       </label>
       <label>Beschreibung / Arbeit
-        <input type="text" name="title" class="input" placeholder="z. B. Haarschnitt, Reparatur…" autocomplete="off" />
+        <input type="text" name="title" class="input" placeholder="z. B. Haarschnitt, Regale einräumen…" autocomplete="off" />
       </label>
       <fieldset class="fieldset">
         <legend>Nach der Arbeit ausfüllen</legend>
