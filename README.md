@@ -1,16 +1,15 @@
-# Kleidung Tracker 👕
+# Arbeitskalender 🗓️
 
-Eine kleine Website, um den **An- und Verkauf von Kleidung** zu tracken – Bestellungen erfassen,
-Versandkosten anteilig verteilen und den Gewinn automatisch pro Tag, Woche, Monat und über die
-letzten 6 Monate auswerten.
+Eine kleine Website, um deinen **Arbeitskalender** zu tracken – Kunden verwalten, Termine
+planen und für jede Arbeit **Bezahlung** und **Arbeitszeit** erfassen. Der Kalender zeigt den
+**Umsatz pro Tag** auf einen Blick.
 
 Die App läuft komplett im Browser. Es wird **kein Server** benötigt; alle Daten werden lokal im
 Browser (`localStorage`) gespeichert.
 
 ## Starten
 
-Einfach `index.html` im Browser öffnen. Für Datei-Zugriffe ohne Einschränkungen kann auch ein
-lokaler Server genutzt werden:
+Einfach `index.html` im Browser öffnen. Alternativ mit einem lokalen Server:
 
 ```bash
 python3 -m http.server 8000
@@ -19,32 +18,28 @@ python3 -m http.server 8000
 
 ## Funktionen
 
-### Bestellübersicht
-- Bestellungen anlegen, bearbeiten und löschen.
-- Pro Bestellung: **Kaufdatum**, **Gesamtgewicht (g)**, **Versandkosten gesamt (€)** und optionale Bezeichnung.
-- Pro Kleidungsstück: **Art**, **Name**, **Gewicht (g)**, **Kaufpreis**, **Verkaufspreis** und **Verkaufsdatum**.
-- Kennzahlen oben: Anzahl Bestellungen, Umsatz, realisierter Gewinn, offene Stücke.
+### Kalender
+- Monatsansicht mit **Umsatz pro Tag** (grünes Abzeichen) und Terminanzahl.
+- Monats-Kennzahlen oben: **Umsatz**, **Arbeitszeit** und **Termine** im Monat.
+- Klick auf einen Tag zeigt alle Termine des Tages und erlaubt es, direkt einen
+  Termin für diesen Tag anzulegen.
 
-### Versandkosten-Verteilung
-Die Versandkosten einer Bestellung werden **anteilig nach Gewicht** auf die Kleidungsstücke verteilt:
+### Termine
+- Termine anlegen, bearbeiten und löschen – mit **Datum**, **Uhrzeit**, **Kunde** und
+  optionaler Beschreibung der Arbeit.
+- Nach der Arbeit können **Bezahlung (€)** und **Arbeitszeit (Std.)** eingetragen werden.
+  Termine ohne Eintrag werden als „offen“ markiert.
+- Liste gruppiert nach Tag inkl. Tagesumsatz; vergangene Termine ausblendbar.
 
-```
-Versand pro Stück = (Gewicht Stück / Gesamtgewicht) × Versandkosten gesamt
-Gewinn pro Stück  = Verkaufspreis − Kaufpreis − Versand pro Stück
-```
-
-Ein Stück zählt erst als **verkauft** (und damit für den Gewinn), wenn ein Verkaufsdatum und ein
-Verkaufspreis gesetzt sind. Ohne Verkaufsdatum bleibt es „offen“.
-
-### Statistik
-- Gewinn **heute**, **diese Woche**, **dieser Monat** und **gesamt**.
-- Balkendiagramm für den Gewinn der **letzten 6 Monate**.
-- Weitere Kennzahlen: Umsatz gesamt, verkaufte/offene Stücke, Ø Gewinn pro Stück.
+### Kunden
+- Übersicht aller Kunden mit **Name**, **Telefonnummer** (antippbar) und **Adresse**.
+- Suche über Name, Telefon und Adresse.
+- Pro Kunde: Anzahl der Termine und Gesamtumsatz.
 
 ## Projektstruktur
 
 ```
-index.html        Grundgerüst, Ansichten und Formular-Vorlage
-css/styles.css    Styling (Dark-/Light-Mode automatisch)
-js/app.js         Logik: Speicherung, Berechnung, Rendering
+index.html        Grundgerüst, Ansichten und Dialoge
+css/styles.css    Styling
+js/app.js         Logik: Speicherung, Kalender, Rendering
 ```
