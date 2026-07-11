@@ -1,6 +1,8 @@
 /* ===== Basis ===== */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+[hidden] { display: none !important; }
+
 :root {
   --bg: #f4f6f9;
   --surface: #ffffff;
@@ -147,6 +149,7 @@ h2 { font-size: 1.05rem; }
 .summary-card .label { font-size: .8rem; color: var(--muted); }
 .summary-card .value { font-size: 1.25rem; font-weight: 700; }
 .summary-card .value.green { color: var(--green); }
+.summary-card .value.amber { color: var(--amber); }
 
 /* ===== Kalender ===== */
 .cal-nav { display: flex; gap: .4rem; }
@@ -276,6 +279,7 @@ h2 { font-size: 1.05rem; }
 .badge-green { color: var(--green); background: var(--green-bg); }
 .badge-amber { color: var(--amber); background: var(--amber-bg); }
 .badge-gray { color: var(--muted); background: var(--bg); }
+.badge-blue { color: var(--primary-dark); background: #e5edfd; }
 
 .date-heading {
   font-size: .85rem;
