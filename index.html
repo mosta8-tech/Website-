@@ -80,7 +80,6 @@
       var(--page);
     color: var(--text-primary);
     line-height: 1.45;
-    padding-top: env(safe-area-inset-top);
     min-height: 100vh;
   }
   button { font: inherit; cursor: pointer; }
@@ -98,7 +97,8 @@
   header.app {
     position: sticky; top: 0; z-index: 30;
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-    margin: 0 -20px 6px; padding: 14px 20px 12px;
+    /* Safe Area der Notch gehört zum Header, damit er beim Scrollen darunter bleibt */
+    margin: 0 -20px 6px; padding: calc(14px + env(safe-area-inset-top)) 20px 12px;
     background: color-mix(in srgb, var(--page) 80%, transparent);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--border);
@@ -558,19 +558,50 @@ let state = load();
 function load() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.orders)) return parsed;
-    }
+    if (raw) return normalizeState(JSON.parse(raw));
   } catch (e) { /* korrupte Daten ignorieren */ }
   return { orders: [] };
+}
+
+/** Fremd- oder Altdaten feldweise prüfen und in ein gültiges Schema bringen. */
+function normalizeState(parsed) {
+  if (!parsed || !Array.isArray(parsed.orders)) throw new Error("Ungültiges Format");
+  const num = v => { const n = typeof v === "string" ? parseFloat(v.replace(",", ".")) : v; return typeof n === "number" && isFinite(n) ? n : 0; };
+  const isoOrNull = v => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  const plat = v => v === "vinted" || v === "ebay" ? v : null;
+  const acc = v => [1, 2, 3].includes(v) ? v : ([1, 2, 3].includes(parseInt(v, 10)) ? parseInt(v, 10) : null);
+  return {
+    orders: parsed.orders.map(o => ({
+      id: o && o.id ? String(o.id) : uid(),
+      name: o && o.name ? String(o.name) : "Ohne Namen",
+      date: isoOrNull(o && o.date) || todayISO(),
+      totalWeight: num(o && o.totalWeight),
+      shippingCost: num(o && o.shippingCost),
+      status: o && o.status === "unterwegs" ? "unterwegs" : "angekommen",
+      items: (o && Array.isArray(o.items) ? o.items : []).map(it => {
+        const sold = it && it.sellPrice !== null && it.sellPrice !== undefined;
+        return {
+          id: it && it.id ? String(it.id) : uid(),
+          name: it && it.name ? String(it.name) : "Unbenannt",
+          weight: num(it && it.weight),
+          buyPrice: num(it && it.buyPrice),
+          sellPrice: sold ? num(it.sellPrice) : null,
+          sellDate: sold ? (isoOrNull(it.sellDate) || todayISO()) : null,
+          platform: sold ? plat(it.platform) : null,
+          account: sold ? acc(it.account) : null,
+          listPlatform: plat(it && it.listPlatform),
+          listAccount: acc(it && it.listAccount),
+        };
+      }),
+    })),
+  };
 }
 
 function save() {
   localStorage.setItem(STORE_KEY, JSON.stringify(state));
 }
 
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 
 /* ============================== Formatierung ============================== */
 
@@ -598,10 +629,10 @@ function parseNum(s) {
 }
 const numToInput = n => (n === null || n === undefined || n === "") ? "" : String(n).replace(".", ",");
 
-const todayISO = () => {
+function todayISO() {
   const d = new Date();
   return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
-};
+}
 
 /* ============================== Berechnungen ============================== */
 
@@ -1892,8 +1923,7 @@ $("#importFile").addEventListener("change", e => {
   const reader = new FileReader();
   reader.onload = () => {
     try {
-      const parsed = JSON.parse(reader.result);
-      if (!parsed || !Array.isArray(parsed.orders)) throw new Error("Ungültiges Format");
+      const parsed = normalizeState(JSON.parse(reader.result));
       if (!confirm(`${parsed.orders.length} Bestellungen importieren? Die aktuellen Daten werden ersetzt.`)) return;
       state = parsed;
       save();
