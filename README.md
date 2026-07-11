@@ -34,6 +34,8 @@ Export/Import lassen sie sich sichern oder auf ein anderes Gerät übertragen.
   `Versandanteil = Gewicht des Teils ÷ Gesamtgewicht × Versandkosten`
   (ohne eingetragenes Gesamtgewicht wird die Summe der Teilgewichte verwendet)
 - **Paketstatus** pro Bestellung (🚚 Unterwegs / 📦 Angekommen), direkt auf der Karte umschaltbar
+- Pro Kleidungsstück festhalten, **wo es zum Verkauf eingestellt ist**
+  (Vinted/eBay, Account 1–3) — der Verkaufsdialog übernimmt diese Angabe als Vorbelegung
 - Verkäufe erfassen mit Verkaufspreis, Verkaufsdatum, **Plattform (Vinted/eBay)** und
   **Account (1–3)**, jederzeit änderbar oder zurücksetzbar
 - Gewinn pro Teil und pro Bestellung: `Verkaufspreis − Kaufpreis − Versandanteil`
@@ -43,6 +45,7 @@ Export/Import lassen sie sich sichern oder auf ein anderes Gerät übertragen.
 - Lagerwert der noch nicht verkauften Teile und Anzahl der Pakete unterwegs
 - Säulendiagramm: **Gewinn der letzten 6 Monate** (mit Tooltip je Monat)
 - **Gewinn nach Plattform & Account** (Vinted/eBay, Account 1–3) als Balkendiagramm und Tabelle
+- **Aktive Angebote nach Kanal**: wie viele unverkaufte Teile wo eingestellt sind (mit Einkaufswert)
 - Monatstabelle mit verkauften Teilen, Umsatz, Kosten und Gewinn
 
 ### Datensicherung

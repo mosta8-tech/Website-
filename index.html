@@ -148,7 +148,7 @@
   .order-actions { display: flex; gap: 8px; padding: 12px 18px 16px; }
 
   .tbl-scroll { overflow-x: auto; padding: 10px 18px 4px; }
-  table.items { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 720px; }
+  table.items { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 900px; }
   table.items th {
     text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
     color: var(--text-muted); font-weight: 600; padding: 6px 10px; border-bottom: 1px solid var(--grid);
@@ -304,6 +304,15 @@
     </div>
 
     <div class="card">
+      <h2>Aktive Angebote nach Kanal</h2>
+      <div class="sub">Noch nicht verkaufte Teile, gruppiert nach Plattform und Account, auf denen sie eingestellt sind</div>
+      <div class="tbl-scroll" style="padding:0">
+        <table class="stats" id="listTable"></table>
+      </div>
+      <div class="sub" id="listEmpty" hidden style="margin:0">Keine Teile im Bestand.</div>
+    </div>
+
+    <div class="card">
       <h2>Monatsübersicht</h2>
       <div class="sub">Alle Werte beziehen sich auf im jeweiligen Monat verkaufte Teile</div>
       <div class="tbl-scroll" style="padding:0">
@@ -360,6 +369,38 @@
       <span class="note">Versandkosten pro Teil = Gewicht des Teils ÷ Gesamtgewicht × Versandkosten</span>
       <button class="btn" id="btnCancelOrder">Abbrechen</button>
       <button class="btn primary" id="btnSaveOrder">Speichern</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===================== Einstellen (Angebot) ===================== -->
+<dialog id="listDialog">
+  <div class="modal-head">
+    <h2 id="listDialogTitle">Einstellen</h2>
+    <button class="btn ghost small" id="btnCloseListDlg" aria-label="Schließen">✕</button>
+  </div>
+  <div class="modal-body">
+    <div class="form-grid">
+      <div class="field">
+        <label for="lPlatform">Eingestellt auf</label>
+        <select id="lPlatform">
+          <option value="vinted">Vinted</option>
+          <option value="ebay">eBay</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="lAccount">Account</label>
+        <select id="lAccount">
+          <option value="1">Account 1</option>
+          <option value="2">Account 2</option>
+          <option value="3">Account 3</option>
+        </select>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn danger" id="btnUnlist" hidden>Nicht mehr eingestellt</button>
+      <button class="btn" id="btnCancelList">Abbrechen</button>
+      <button class="btn primary" id="btnSaveList">Speichern</button>
     </div>
   </div>
 </dialog>
@@ -517,10 +558,10 @@ const PLATFORM_NAMES = { vinted: "Vinted", ebay: "eBay" };
 const platformName = p => PLATFORM_NAMES[p] || "Ohne Angabe";
 const platformColor = p => p === "vinted" ? "var(--plat-vinted)" : p === "ebay" ? "var(--plat-ebay)" : "var(--plat-none)";
 
-/** Kanal-Beschriftung eines verkauften Teils, z. B. "Vinted · A2". */
-function channelLabel(it) {
-  if (!it.platform) return "–";
-  return platformName(it.platform) + (it.account ? " · A" + it.account : "");
+/** Kurze Kanal-Beschriftung, z. B. "Vinted · A2". */
+function chanLabel(platform, account) {
+  if (!platform) return "–";
+  return platformName(platform) + (account ? " · A" + account : "");
 }
 
 const orderStatus = o => o.status === "unterwegs" ? "unterwegs" : "angekommen";
@@ -694,7 +735,7 @@ function itemsTable(o) {
   const hr = document.createElement("tr");
   const heads = [
     ["Kleidungsstück", ""], ["Gewicht", "num"], ["Kaufpreis", "num"], ["Versandanteil", "num"],
-    ["Kosten", "num"], ["Verkaufspreis", "num"], ["Gewinn", "num"], ["Verkauft über", ""], ["Status", ""], ["", ""]
+    ["Kosten", "num"], ["Verkaufspreis", "num"], ["Gewinn", "num"], ["Eingestellt", ""], ["Verkauft über", ""], ["Status", ""], ["", ""]
   ];
   for (const [h, cls] of heads) {
     const th = document.createElement("th");
@@ -733,8 +774,12 @@ function itemsTable(o) {
     tdP.textContent = sold ? eur(p) : "–";
     tr.appendChild(tdP);
 
+    const tdL = document.createElement("td");
+    tdL.textContent = chanLabel(it.listPlatform, it.listAccount);
+    tr.appendChild(tdL);
+
     const tdC = document.createElement("td");
-    tdC.textContent = sold ? channelLabel(it) : "–";
+    tdC.textContent = sold ? chanLabel(it.platform, it.account) : "–";
     tr.appendChild(tdC);
 
     const tdS = document.createElement("td");
@@ -746,6 +791,15 @@ function itemsTable(o) {
 
     const tdA = document.createElement("td");
     tdA.className = "num";
+    tdA.style.whiteSpace = "nowrap";
+    if (!sold) {
+      const bl = document.createElement("button");
+      bl.className = "btn small ghost";
+      bl.textContent = "Einstellen";
+      bl.addEventListener("click", () => openListDialog(o.id, it.id));
+      tdA.appendChild(bl);
+      tdA.appendChild(document.createTextNode(" "));
+    }
     const b = document.createElement("button");
     b.className = "btn small" + (sold ? " ghost" : "");
     b.textContent = sold ? "Ändern" : "Verkaufen";
@@ -849,6 +903,8 @@ function saveOrderFromDialog() {
       sellDate: sellPrice === null ? null : (prev && prev.sellDate ? prev.sellDate : todayISO()),
       platform: sellPrice === null ? null : (prev ? prev.platform || null : null),
       account: sellPrice === null ? null : (prev ? prev.account || null : null),
+      listPlatform: prev ? prev.listPlatform || null : null,
+      listAccount: prev ? prev.listAccount || null : null,
     });
   });
 
@@ -873,6 +929,41 @@ function saveOrderFromDialog() {
   save();
   orderDlg.close();
   renderOrders();
+}
+
+/* ============================== Einstellen-Dialog ============================== */
+
+const listDlg = $("#listDialog");
+let listTarget = null; // {orderId, itemId}
+
+$("#btnCloseListDlg").addEventListener("click", () => listDlg.close());
+$("#btnCancelList").addEventListener("click", () => listDlg.close());
+$("#btnSaveList").addEventListener("click", () => {
+  const it = findItem(listTarget);
+  if (it) {
+    it.listPlatform = $("#lPlatform").value;
+    it.listAccount = parseInt($("#lAccount").value, 10);
+    save();
+  }
+  listDlg.close();
+  renderOrders();
+});
+$("#btnUnlist").addEventListener("click", () => {
+  const it = findItem(listTarget);
+  if (it) { it.listPlatform = null; it.listAccount = null; save(); }
+  listDlg.close();
+  renderOrders();
+});
+
+function openListDialog(orderId, itemId) {
+  listTarget = { orderId, itemId };
+  const it = findItem(listTarget);
+  if (!it) return;
+  $("#listDialogTitle").textContent = "Einstellen: " + it.name;
+  $("#lPlatform").value = it.listPlatform || "vinted";
+  $("#lAccount").value = it.listAccount ? String(it.listAccount) : "1";
+  $("#btnUnlist").hidden = !it.listPlatform;
+  listDlg.showModal();
 }
 
 /* ============================== Verkaufs-Dialog ============================== */
@@ -903,8 +994,9 @@ function openSellDialog(orderId, itemId) {
   $("#sellDialogTitle").textContent = (sold ? "Verkauf ändern: " : "Verkauf erfassen: ") + it.name;
   $("#sPrice").value = sold ? numToInput(it.sellPrice) : "";
   $("#sDate").value = it.sellDate || todayISO();
-  $("#sPlatform").value = it.platform || "vinted";
-  $("#sAccount").value = it.account ? String(it.account) : "1";
+  // Vorbelegung: wo verkauft wurde, sonst wo das Teil eingestellt ist
+  $("#sPlatform").value = it.platform || it.listPlatform || "vinted";
+  $("#sAccount").value = it.account ? String(it.account) : (it.listAccount ? String(it.listAccount) : "1");
   $("#btnUnsell").hidden = !sold;
   sellDlg.showModal();
   $("#sPrice").focus();
@@ -977,7 +1069,60 @@ function renderStats() {
 
   renderMonthChart(recs, today);
   renderPlatformStats(recs);
+  renderListedStats();
   renderMonthTable(recs, today);
+}
+
+/* ---------- Aktive Angebote nach Kanal ---------- */
+
+function renderListedStats() {
+  const map = new Map();
+  for (const o of state.orders) {
+    for (const it of o.items) {
+      if (it.sellPrice !== null && it.sellPrice !== undefined) continue; // nur unverkaufte
+      const key = it.listPlatform ? it.listPlatform + "|" + (it.listAccount || 0) : "none";
+      if (!map.has(key)) map.set(key, { platform: it.listPlatform || null, account: it.listAccount || null, count: 0, cost: 0 });
+      const g = map.get(key);
+      g.count++;
+      g.cost += itemCost(o, it);
+    }
+  }
+  const rank = g => (g.platform === "vinted" ? 0 : g.platform === "ebay" ? 10 : 20) + (g.account || 0);
+  const groups = [...map.values()].sort((a, b) => rank(a) - rank(b));
+
+  const table = $("#listTable");
+  table.textContent = "";
+  $("#listEmpty").hidden = groups.length > 0;
+  if (!groups.length) return;
+
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const [h, cls] of [["Kanal", ""], ["Teile", "num"], ["Einkaufswert (inkl. Versandanteil)", "num"]]) {
+    const th = document.createElement("th");
+    if (cls) th.className = cls;
+    th.textContent = h;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const g of groups) {
+    const tr = document.createElement("tr");
+    const cells = [
+      [g.platform ? platformName(g.platform) + (g.account ? " · Account " + g.account : "") : "Nicht eingestellt", ""],
+      [String(g.count), "num"],
+      [eur(g.cost), "num"],
+    ];
+    for (const [txt, cls] of cells) {
+      const td = document.createElement("td");
+      if (cls) td.className = cls;
+      td.textContent = txt;
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
 }
 
 const plural = n => n === 1 ? "1 Teil verkauft" : `${n} Teile verkauft`;
