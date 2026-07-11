@@ -30,6 +30,8 @@
     --plat-vinted: #2a78d6;
     --plat-ebay: #1baf7a;
     --plat-none: #898781;
+    --wash-pos: 42,120,214;   /* RGB für Kalender-Einfärbung */
+    --wash-neg: 227,73,72;
     --good-text: #006300;
     --bad-text: #b32d2d;
     --badge-sold-bg: rgba(12,163,12,0.12);
@@ -55,6 +57,8 @@
       --plat-vinted: #3987e5;
       --plat-ebay: #199e70;
       --plat-none: #898781;
+      --wash-pos: 57,135,229;
+      --wash-neg: 230,103,103;
       --good-text: #0ca30c;
       --bad-text: #e66767;
       --badge-sold-bg: rgba(12,163,12,0.18);
@@ -198,6 +202,27 @@
   .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12.5px; color: var(--text-secondary); }
   .legend .sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
 
+  /* ---------- Kalender ---------- */
+  .cal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .cal-title { font-weight: 650; min-width: 150px; text-align: center; }
+  .cal-wrap { position: relative; }
+  .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .cal-dow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); text-align: center; padding: 2px 0 6px; font-weight: 600; }
+  .cal-cell {
+    border: 1px solid var(--grid); border-radius: 8px; min-height: 66px; padding: 6px 7px;
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .cal-cell.blank { border-color: transparent; }
+  .cal-cell.today { outline: 2px solid var(--accent); outline-offset: -1px; }
+  .cal-day { font-size: 11px; color: var(--text-muted); }
+  .cal-profit { font-size: 12.5px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .cal-rev { font-size: 11px; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  @media (max-width: 640px) {
+    .cal-cell { min-height: 52px; padding: 4px 5px; }
+    .cal-rev { display: none; }
+    .cal-profit { font-size: 11px; }
+  }
+
   table.stats { width: 100%; border-collapse: collapse; font-size: 13.5px; }
   table.stats th {
     text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
@@ -291,6 +316,21 @@
     </div>
 
     <div class="card">
+      <h2>Kalender</h2>
+      <div class="sub">Gewinn und Umsatz pro Tag (nach Verkaufsdatum)</div>
+      <div class="cal-head">
+        <button class="btn small" id="calPrev" aria-label="Vorheriger Monat">‹</button>
+        <div class="cal-title" id="calTitle"></div>
+        <button class="btn small" id="calNext" aria-label="Nächster Monat">›</button>
+        <button class="btn small ghost" id="calToday">Heute</button>
+      </div>
+      <div class="cal-wrap" id="calWrap">
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="tooltip" id="calTip"></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Gewinn nach Plattform &amp; Account</h2>
       <div class="sub">Realisierter Gewinn je Verkaufskanal</div>
       <div class="legend" id="platLegend"></div>
@@ -301,6 +341,19 @@
       <div class="tbl-scroll" style="padding:0">
         <table class="stats" id="platTable"></table>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>Top-Produkte nach Rendite</h2>
+      <div class="sub">Bestes Kosten-Gewinn-Verhältnis: Gewinn ÷ Kosten (Kaufpreis + Versandanteil), nur verkaufte Teile</div>
+      <div class="chart-box" id="roiBox">
+        <svg id="roiSvg" role="img" aria-label="Balkendiagramm: Rendite der besten Produkte im Vergleich"></svg>
+        <div class="tooltip" id="roiTip"></div>
+      </div>
+      <div class="tbl-scroll" style="padding:0">
+        <table class="stats" id="roiTable"></table>
+      </div>
+      <div class="sub" id="roiEmpty" hidden style="margin:0">Noch keine Verkäufe erfasst.</div>
     </div>
 
     <div class="card">
@@ -480,7 +533,10 @@ const fmtDate = new Intl.DateTimeFormat("de-DE", { day: "2-digit", month: "2-dig
 const fmtMonthShort = new Intl.DateTimeFormat("de-DE", { month: "short" });
 const fmtMonthLong = new Intl.DateTimeFormat("de-DE", { month: "long", year: "numeric" });
 
+const fmtEURShort = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
+const fmtPct = new Intl.NumberFormat("de-DE", { style: "percent", maximumFractionDigits: 0 });
 const eur = v => fmtEUR.format(v || 0);
+const eurShort = v => fmtEURShort.format(v || 0);
 const grams = v => fmtNum.format(v || 0) + " g";
 const dateStr = iso => iso ? fmtDate.format(new Date(iso + "T00:00:00")) : "–";
 
@@ -545,6 +601,7 @@ function soldRecords() {
       const p = itemProfit(o, it);
       if (p === null) continue;
       recs.push({
+        name: it.name,
         date: it.sellDate || o.date || todayISO(),
         revenue: it.sellPrice, cost: itemCost(o, it), profit: p,
         platform: it.platform || null, account: it.account || null,
@@ -1068,9 +1125,279 @@ function renderStats() {
   }
 
   renderMonthChart(recs, today);
+  renderCalendar();
   renderPlatformStats(recs);
+  renderRoiStats();
   renderListedStats();
   renderMonthTable(recs, today);
+}
+
+/* ---------- gemeinsame Tooltip-Helfer ---------- */
+
+/** Tooltip-Inhalt aufbauen: Titel + Zeilen [{name, val, color, strong}]. */
+function buildTip(tip, title, rows) {
+  tip.textContent = "";
+  const head = document.createElement("div");
+  head.className = "t-head";
+  head.textContent = title;
+  tip.appendChild(head);
+  for (const r of rows) {
+    const row = document.createElement("div"); row.className = "t-row";
+    const k = document.createElement("span"); k.className = "t-key";
+    k.style.background = r.color || "transparent";
+    const n = document.createElement("span"); n.className = "t-name"; n.textContent = r.name;
+    const v = document.createElement("span"); v.className = "t-val"; v.textContent = r.val;
+    if (!r.strong) v.style.fontWeight = "450";
+    row.append(k, n, v);
+    tip.appendChild(row);
+  }
+}
+
+/** Tooltip neben einem Punkt (Pixelkoordinaten relativ zum Container) platzieren. */
+function placeTip(tip, box, px, py) {
+  tip.style.display = "block";
+  const bw = box.clientWidth;
+  let left = px + 14;
+  if (left + tip.offsetWidth > bw - 4) left = px - tip.offsetWidth - 14;
+  tip.style.left = Math.max(4, left) + "px";
+  tip.style.top = Math.max(4, py - tip.offsetHeight / 2) + "px";
+}
+
+/* ---------- Kalender: Gewinn & Umsatz pro Tag ---------- */
+
+let calMonth = null; // 1. Tag des angezeigten Monats
+
+$("#calPrev").addEventListener("click", () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() - 1, 1); renderCalendar(); });
+$("#calNext").addEventListener("click", () => { calMonth = new Date(calMonth.getFullYear(), calMonth.getMonth() + 1, 1); renderCalendar(); });
+$("#calToday").addEventListener("click", () => { calMonth = null; renderCalendar(); });
+
+function renderCalendar() {
+  if (!calMonth) {
+    const n = new Date();
+    calMonth = new Date(n.getFullYear(), n.getMonth(), 1);
+  }
+  const y = calMonth.getFullYear(), m = calMonth.getMonth();
+  $("#calTitle").textContent = fmtMonthLong.format(calMonth);
+
+  // Verkäufe nach Tag gruppieren
+  const byDay = new Map();
+  for (const r of soldRecords()) {
+    if (!byDay.has(r.date)) byDay.set(r.date, { profit: 0, revenue: 0, count: 0 });
+    const d = byDay.get(r.date);
+    d.profit += r.profit; d.revenue += r.revenue; d.count++;
+  }
+
+  const grid = $("#calGrid");
+  const tip = $("#calTip");
+  const wrap = $("#calWrap");
+  grid.textContent = "";
+
+  for (const dow of ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]) {
+    const h = document.createElement("div");
+    h.className = "cal-dow";
+    h.textContent = dow;
+    grid.appendChild(h);
+  }
+
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  const startOffset = (new Date(y, m, 1).getDay() + 6) % 7; // Montag = 0
+
+  // stärkster Tag des Monats bestimmt die Intensität der Einfärbung
+  let maxAbs = 0;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = byDay.get(isoDay(y, m, day));
+    if (d) maxAbs = Math.max(maxAbs, Math.abs(d.profit));
+  }
+
+  for (let i = 0; i < startOffset; i++) {
+    const c = document.createElement("div");
+    c.className = "cal-cell blank";
+    grid.appendChild(c);
+  }
+
+  const todayIso = todayISO();
+  for (let day = 1; day <= daysInMonth; day++) {
+    const iso = isoDay(y, m, day);
+    const data = byDay.get(iso);
+    const cell = document.createElement("div");
+    cell.className = "cal-cell" + (iso === todayIso ? " today" : "");
+
+    const dn = document.createElement("div");
+    dn.className = "cal-day";
+    dn.textContent = String(day);
+    cell.appendChild(dn);
+
+    if (data) {
+      // Einfärbung: mehr Gewinn = kräftigeres Blau, Verlust = Rot
+      if (maxAbs > 0 && data.profit !== 0) {
+        const alpha = 0.08 + 0.30 * Math.abs(data.profit) / maxAbs;
+        cell.style.background = `rgba(var(${data.profit < 0 ? "--wash-neg" : "--wash-pos"}), ${alpha.toFixed(3)})`;
+      }
+      const p = document.createElement("div");
+      p.className = "cal-profit";
+      p.textContent = eurShort(data.profit);
+      const r = document.createElement("div");
+      r.className = "cal-rev";
+      r.textContent = eurShort(data.revenue);
+      cell.append(p, r);
+
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "img");
+      cell.setAttribute("aria-label", `${dateStr(iso)}: Gewinn ${eur(data.profit)}, Umsatz ${eur(data.revenue)}, ${data.count} Teile verkauft`);
+      const show = () => {
+        buildTip(tip, dateStr(iso), [
+          { name: "Gewinn", val: eur(data.profit), color: data.profit < 0 ? "var(--neg)" : "var(--pos)", strong: true },
+          { name: "Umsatz", val: eur(data.revenue) },
+          { name: "Verkaufte Teile", val: String(data.count) },
+        ]);
+        const wr = wrap.getBoundingClientRect();
+        const cr = cell.getBoundingClientRect();
+        placeTip(tip, wrap, cr.right - wr.left, cr.top - wr.top + cr.height / 2);
+      };
+      cell.addEventListener("pointerenter", show);
+      cell.addEventListener("focus", show);
+      cell.addEventListener("pointerleave", () => tip.style.display = "none");
+      cell.addEventListener("blur", () => tip.style.display = "none");
+    }
+
+    grid.appendChild(cell);
+  }
+}
+
+const isoDay = (y, m, d) => y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+
+/* ---------- Top-Produkte nach Rendite (Kosten-Gewinn-Verhältnis) ---------- */
+
+function renderRoiStats() {
+  const items = [];
+  for (const o of state.orders) {
+    for (const it of o.items) {
+      const p = itemProfit(o, it);
+      if (p === null) continue;
+      const cost = itemCost(o, it);
+      if (cost <= 0) continue; // ohne Kosten ist kein Verhältnis bestimmbar
+      items.push({ name: it.name, cost, sell: it.sellPrice, profit: p, roi: p / cost, date: it.sellDate });
+    }
+  }
+  items.sort((a, b) => b.roi - a.roi);
+  const top = items.slice(0, 5);
+
+  const svg = $("#roiSvg");
+  const table = $("#roiTable");
+  svg.textContent = ""; table.textContent = "";
+  $("#roiEmpty").hidden = top.length > 0;
+  if (!top.length) { svg.removeAttribute("viewBox"); return; }
+
+  // horizontales Balkendiagramm: bestes Produkt betont, Rest als Kontext
+  const W = 920, rowH = 44, padL = 230, padR = 90, padT = 6, padB = 10;
+  const H = padT + rowH * top.length + padB;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+
+  const vMax = Math.max(0, ...top.map(t => t.roi));
+  const vMin = Math.min(0, ...top.map(t => t.roi));
+  const span = (vMax - vMin) || 1;
+  const x = v => padL + (v - vMin) / span * (W - padL - padR);
+
+  const ns = "http://www.w3.org/2000/svg";
+  const el = (tag, attrs) => {
+    const e = document.createElementNS(ns, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    return e;
+  };
+
+  svg.appendChild(el("line", { x1: x(0), x2: x(0), y1: padT, y2: H - padB, stroke: "var(--baseline)", "stroke-width": 1 }));
+
+  const tip = $("#roiTip");
+  const box = $("#roiBox");
+
+  top.forEach((t, i) => {
+    const cy = padT + rowH * (i + 0.5);
+    const barH = 20;
+    const x0 = x(0), x1 = x(t.roi);
+    const left = Math.min(x0, x1);
+    const w = t.roi !== 0 ? Math.max(Math.abs(x1 - x0), 2) : 0;
+    const color = i === 0 ? "var(--accent)" : "var(--plat-none)"; // Betonung: bestes Produkt
+    const r = Math.min(4, w);
+    const yTop = cy - barH / 2;
+
+    if (w > 0) {
+      const neg = t.roi < 0;
+      const d = neg
+        ? `M ${x0} ${yTop} V ${yTop + barH} H ${left + r} Q ${left} ${yTop + barH} ${left} ${yTop + barH - r} V ${yTop + r} Q ${left} ${yTop} ${left + r} ${yTop} Z`
+        : `M ${x0} ${yTop} V ${yTop + barH} H ${left + w - r} Q ${left + w} ${yTop + barH} ${left + w} ${yTop + barH - r} V ${yTop + r} Q ${left + w} ${yTop} ${left + w - r} ${yTop} Z`;
+      svg.appendChild(el("path", { d, fill: color }));
+    }
+
+    const label = t.name.length > 26 ? t.name.slice(0, 25) + "…" : t.name;
+    const name = el("text", { x: padL - 12, y: cy + 4, "text-anchor": "end", "font-size": 12.5, fill: i === 0 ? "var(--text-primary)" : "var(--text-secondary)", "font-weight": i === 0 ? 650 : 450 });
+    name.textContent = label;
+    svg.appendChild(name);
+
+    // negative Werte rechts der Nulllinie beschriften (keine Kollision mit dem Namen)
+    const isNeg = t.roi < 0;
+    const val = el("text", {
+      x: isNeg ? x0 + 8 : left + w + 8, y: cy + 4, "text-anchor": "start",
+      "font-size": 12, "font-weight": 650, fill: "var(--text-primary)",
+      style: "font-variant-numeric: tabular-nums",
+    });
+    val.textContent = fmtPct.format(t.roi);
+    svg.appendChild(val);
+
+    const hit = el("rect", { x: 0, y: padT + rowH * i, width: W, height: rowH, fill: "transparent", tabindex: 0, role: "img" });
+    hit.setAttribute("aria-label", `${t.name}: Rendite ${fmtPct.format(t.roi)}, Kosten ${eur(t.cost)}, Gewinn ${eur(t.profit)}`);
+    const show = () => {
+      buildTip(tip, t.name, [
+        { name: "Rendite", val: fmtPct.format(t.roi), color, strong: true },
+        { name: "Kosten", val: eur(t.cost) },
+        { name: "Verkaufspreis", val: eur(t.sell) },
+        { name: "Gewinn", val: eur(t.profit) },
+      ]);
+      const rect = svg.getBoundingClientRect();
+      placeTip(tip, box, Math.max(x0, x1) * (rect.width / W), cy * (rect.height / H));
+    };
+    hit.addEventListener("pointerenter", show);
+    hit.addEventListener("pointermove", show);
+    hit.addEventListener("focus", show);
+    hit.addEventListener("pointerleave", () => tip.style.display = "none");
+    hit.addEventListener("blur", () => tip.style.display = "none");
+    svg.appendChild(hit);
+  });
+
+  // Tabellenansicht
+  const thead = document.createElement("thead");
+  const hr = document.createElement("tr");
+  for (const [h, cls] of [["Produkt", ""], ["Verkauft am", ""], ["Kosten", "num"], ["Verkaufspreis", "num"], ["Gewinn", "num"], ["Rendite", "num"]]) {
+    const th = document.createElement("th");
+    if (cls) th.className = cls;
+    th.textContent = h;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  top.forEach((t, i) => {
+    const tr = document.createElement("tr");
+    const cells = [
+      [(i === 0 ? "🏆 " : "") + t.name, ""],
+      [dateStr(t.date), ""],
+      [eur(t.cost), "num"],
+      [eur(t.sell), "num"],
+      [eur(t.profit), "num"],
+    ];
+    for (const [txt, cls] of cells) {
+      const td = document.createElement("td");
+      if (cls) td.className = cls;
+      td.textContent = txt;
+      tr.appendChild(td);
+    }
+    const tdR = document.createElement("td");
+    tdR.className = "num " + (t.roi > 0 ? "profit-pos" : t.roi < 0 ? "profit-neg" : "");
+    tdR.textContent = fmtPct.format(t.roi);
+    tr.appendChild(tdR);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
 }
 
 /* ---------- Aktive Angebote nach Kanal ---------- */
@@ -1365,11 +1692,11 @@ function renderPlatformStats(recs) {
     name.textContent = channelName(g);
     svg.appendChild(name);
 
-    // Wert an der Balkenspitze
+    // Wert an der Balkenspitze; bei negativen Balken rechts der Nulllinie,
+    // damit er nicht mit dem Kanalnamen kollidiert
     const isNeg = g.profit < 0;
-    const vx = isNeg ? left - 8 : left + w + 8;
     const val = el("text", {
-      x: vx, y: cy + 4, "text-anchor": isNeg ? "end" : "start",
+      x: isNeg ? x0 + 8 : left + w + 8, y: cy + 4, "text-anchor": "start",
       "font-size": 12, "font-weight": 650, fill: "var(--text-primary)",
       style: "font-variant-numeric: tabular-nums",
     });

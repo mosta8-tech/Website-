@@ -44,6 +44,9 @@ Export/Import lassen sie sich sichern oder auf ein anderes Gerät übertragen.
 - Gewinn **heute**, **diese Woche** (Mo–So), **diesen Monat** und **gesamt** — automatisch berechnet
 - Lagerwert der noch nicht verkauften Teile und Anzahl der Pakete unterwegs
 - Säulendiagramm: **Gewinn der letzten 6 Monate** (mit Tooltip je Monat)
+- **Kalender**: Gewinn und Umsatz pro Tag, mit Monatsnavigation und farblicher Hervorhebung starker Tage
+- **Top-Produkte nach Rendite**: direkter Vergleich der Produkte mit dem besten
+  Kosten-Gewinn-Verhältnis (Gewinn ÷ Kosten)
 - **Gewinn nach Plattform & Account** (Vinted/eBay, Account 1–3) als Balkendiagramm und Tabelle
 - **Aktive Angebote nach Kanal**: wie viele unverkaufte Teile wo eingestellt sind (mit Einkaufswert)
 - Monatstabelle mit verkauften Teilen, Umsatz, Kosten und Gewinn
